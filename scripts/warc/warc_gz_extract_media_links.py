@@ -65,12 +65,16 @@ for file in glob.glob("*.warc.gz"):
 	file_list.append(file)
 
 # List of file extension (ex: .mp3) to find links for, can add/edit if needed
-audio_file_exts = ['.3ga','.aac','.aif','.aifc','.aiff','.dts','.dtshd','.fl','.flac','.flp','.g726','.gsm','.m3u','.m3u8','.m4a','.m4b','.midi','.mp2','.mp3','.odm','.oga','.ogg','.pcast','.raw','.wav','.wma',]
-video_file_exts = ['.webm','.flv','.mpg', '.mp2', '.mpeg', '.mpe', '.mpv','.ogg','.mp4', '.m4p', '.m4v','.avi', '.mkv','.wmv','.mov', '.qt','.flv', '.swf','.avchd','.webp','.ts',]
+audio_file_exts = ['.3ga','.aac','.aif','.aifc','.aiff','.dts','.dtshd','.fl','.flac','.flp','.g726','.gsm',
+		   '.m3u','.m3u8','.m4a','.m4b','.midi','.mp2','.mp3','.odm','.oga','.ogg','.pcast','.raw','.wav','.wma',]
+video_file_exts = ['.webm','.flv','.mpg', '.mp2', '.mpeg', '.mpe', '.mpv','.ogg','.mp4', '.m4p', '.m4v',
+		   '.avi', '.mkv','.wmv','.mov', '.qt','.flv', '.swf','.avchd','.webp','.ts',]
 all_file_exts = audio_file_exts + video_file_exts
 
 if len(sys.argv) != 3:
-	print("You must enter 2 arguments!\nArgument 1: path to folder with warc.gz files. Example: C:/users/yourname/Desktop/backup\nArgument 2: organization name, used for file naming. Example: rthk\n")
+	print("You must enter 2 arguments!\nArgument 1: path to folder with warc.gz files. \
+	Example: C:/users/yourname/Desktop/backup\n\
+	Argument 2: organization name, used for file naming. Example: rthk\n")
 	sys.exit()
 
 
@@ -98,7 +102,8 @@ for file in file_list:
 				ext_regex = re.compile('https%3A.*\\' + ext)
 
 				# WARC-Target-URI
-				result_list = [x.group() for x in re.finditer(ext_regex, str(record.rec_headers.get_header('WARC-Target-URI')))]
+				result_list = [x.group() for x in re.finditer(ext_regex, \
+									      str(record.rec_headers.get_header('WARC-Target-URI')))]
 				for item in result_list:
 					media_uri.append(item)
 
