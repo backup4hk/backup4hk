@@ -23,8 +23,9 @@ You MUST install:
 2. Switch to English version of FB. See [here](https://www.facebook.com/help/327850733950290/)
 3. Quit Chrome, once logged in to FB.
 4. Run script. You can run either with arguments (see below), or without any arguments (the script will then ask you questions about video you want to download).
-5. Videos are downloaded. The progress bar shows progress of downloading one particular video. It shows time since download start, and time left to download finish.
-6. When script is finished, check "archive" .txt file for any videos that had error when downloading. Then redownload them.
+5. The first time you run script, Chrome will not be logged in to Facebook. Log in to Facebook.
+6. Videos are downloaded. The progress bar shows progress of downloading one particular video. It shows time since download start, and time left to download finish.
+7. When script is finished, check "archive" .txt file for any videos that had error when downloading. Then redownload them.
 
 **NOTE**: For some videos, this script will download the video and audio files **SEPARATELY** (due to the way Facebook build their videos). **If there is both a `<fb_video_id>_video.mp4` and `<fb_video_id>_audio.mp4` file (same ID), after downloading the video and audio file, you must combine them together using a tool, like FFMpeg.**
 Here is one possible way to do it with FFMpeg: https://superuser.com/questions/277642/how-to-merge-audio-and-video-file-in-ffmpeg
