@@ -166,8 +166,8 @@ def find_fb_video_download_url(html_content):
 		# 	logger.debug('no video tags found')
 
 		if video_tag_exists == False:
-			# Find URLs inside resolutions (tag on FB video URL page source: <FBQualityLabel>) and quality classes (tag on FB video URL page source: <FBQualityClass>)
-			resolutions = ['1080p','720p','480p','360p','240p','Source','source',]
+ 			# Find URLs inside resolutions (tag on FB video URL page source: <FBQualityLabel>) and quality classes (tag on FB video URL page source: <FBQualityClass>)
+ 			resolutions = ['1080p','720p','480p','360p','240p','Source','source',]
 			quality_class_list = ['hd', 'sd']
 
 			vid_regex = {}
@@ -176,6 +176,53 @@ def find_fb_video_download_url(html_content):
 			for resolution in resolutions:
 				vid_regex[resolution] = re.compile(resolution + '(.*?)">(.*?)u003CBaseURL>https:(.*?)BaseURL')
 				vid_regex_results[resolution] = re.search(vid_regex[resolution], html_content)
+
+
+		# # Find the video link in the returned HTML content.
+		# # Try 1080P first, if no 1080P, then try finding 720P, 480P, 360P links.
+		# vid_regex = re.compile('1080p(.*?)">(.*?)u003CBaseURL>https:(.*?)BaseURL')
+		# vid_regex_results = re.search(vid_regex, html_content)
+
+		# # If no 1080p link
+		# if vid_regex_results != None:
+		# 	# Try finding 720p link
+		# 	vid_regex = re.compile('720p(.*?)">(.*?)u003CBaseURL>https:(.*?)BaseURL')
+		# 	vid_regex_results = re.search(vid_regex, html_content)
+
+		# 	if vid_regex_results != None:
+		# 		logger.debug('720p')
+		# 	else:
+		# 		# Try 480p
+		# 		vid_regex = re.compile('480p(.*?)">(.*?)u003CBaseURL>https:(.*?)BaseURL')
+		# 		vid_regex_results = re.search(vid_regex, html_content)
+				
+		# 		if vid_regex_results != None:
+		# 			logger.debug('480p')
+		# 		else:
+		# 			# Try 360p
+		# 			vid_regex = re.compile('360p(.*?)">(.*?)u003CBaseURL>https:(.*?)BaseURL')
+		# 			vid_regex_results = re.search(vid_regex, html_content)
+
+		# 			if vid_regex_results != None:
+		# 				logger.debug('360p')
+		# 			else:
+		# 				# Try 240p
+		# 				vid_regex = re.compile('240p(.*?)">(.*?)u003CBaseURL>https:(.*?)BaseURL')
+		# 				vid_regex_results = re.search(vid_regex, html_content)
+
+		# 				if vid_regex_results != None:
+		# 					logger.debug('240p')
+		# 				else:
+		# 					# Find if video tag exists
+		# 					soup = BeautifulSoup(html_content, 'html.parser')#lxml')#html.parser')
+		# 					video_tag = soup.find('video')
+		# 					if video_tag != None:
+		# 						video_tag_exists = True
+		# 						logger.debug('found video tag')
+		# 						vid_urls =  video_tag.get('src')
+		# 					else:
+		# 						logger.debug('nothing found')
+						
 
 		# Process the URL, get rid of extra characters
 
@@ -202,7 +249,7 @@ def find_fb_video_download_url(html_content):
 						break
 
 				except AttributeError as e:
-          # This means a video doesn't exist for this resolution, so try other resolutions.
+					# This means a video doesn't exist for this resolution, so try other resolutions.
 					if str(e) == "'NoneType' object has no attribute 'group'":
 						continue
 					else:
@@ -235,7 +282,7 @@ def find_fb_video_download_url(html_content):
 							non_hvideo_video = True
 							break
 					except AttributeError as e:
-   					# This means a video doesn't exist for this quality_class, so try remaining quality_class.
+    					# This means a video doesn't exist for this quality_class, so try other quality_class.
 						if str(e) == "'NoneType' object has no attribute 'group'":
 							continue
 						else:
@@ -378,8 +425,8 @@ if __name__ == '__main__':
 		logger.setLevel(logging.DEBUG)
 	else:
 		logger.setLevel(logging.INFO)
-
-  # used for file naming
+	
+	# used for file naming
 	now_as_string = datetime.now().strftime('%Y%m%d_%H%M')
 
 	# Create a log file to store output of program
@@ -468,15 +515,17 @@ if __name__ == '__main__':
 							continue
 
 					# See if there are any non-integers in id column
-					try:
-						archive_file_df['id'].values.astype('int')
-					except ValueError as e:
-						logger.critical('Error with archive CSV file, in "id" column! \
-							This column should only have integers. Check if any strings or \
-							non-integers exist in this column. If so, remove them, save CSV file, \
-							then rerun script.\nFull error message below:\n')
-						traceback.print_exc()
-						sys.exit()
+					while True:
+						try:
+							archive_file_df['id'].values.astype('int')
+							break
+						except ValueError as e:
+							archive_file_df = archive_file_df[pd.to_numeric(archive_file_df['id'], errors='coerce').notnull()]
+							logger.warning('Warning! Archive CSV file, in "id" column! \
+								This column should only have integers, but it has non-integers. Will try to rewrite CSV file to delete non-integer rows.')
+							archive_file_df.to_csv(archive_file_path,index=False)
+							#traceback.print_exc()
+							#sys.exit()
 
 					if int(id_of_vid) in archive_file_df['id'].values:
 						#print('found id')
@@ -585,7 +634,10 @@ if __name__ == '__main__':
 					update_archive_file(id_of_vid, 'error', archive_file_path, '418_invalid_url')
 				else:
 					# Update archive, to say this link had an error.      
-					update_archive_file(id_of_vid, 'error', archive_file_path, str(e))
+					error_msg = str(e)
+					error_msg = error_msg.replace('\n','')
+
+					update_archive_file(id_of_vid, 'error', archive_file_path, error_msg)
 
 				# Wait for 10-40 secs
 				wait_interval = randint(10,40)
