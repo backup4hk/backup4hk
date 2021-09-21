@@ -1,5 +1,6 @@
 '''
 # Scrape Facebook for posts
+# NOTE: This script does NOT download post photos or videos
 # Last updated: 2021-09-20
 '''
 
