@@ -1,7 +1,7 @@
 '''
 # Scrape Facebook for posts
 # NOTE: This script does NOT download post photos or videos
-# Last updated: 2021-09-20
+# Last updated: 2021-09-22
 '''
 
 import json, time, logging, os, argparse, traceback, requests
@@ -109,86 +109,85 @@ def get_input_variables():
 		}
 		return return_dict 
 
-# Read master archive file, to get the date we last pulled posts for a profile.
+# Read last crawl record file csv file, which stores the date we last pulled posts for a profile.
 # (Ex: last time we pulled CNN FB page is 2021-01-03 18:33).
 # (if DOWNLOAD_ALL_POSTS is True, return 1970-01-01 datetime, as we want to download all posts)
-def read_archive_file(user, archive_file_path, CSV_FILE_PATH, DOWNLOAD_ALL_POSTS):
+def read_lastcrawl_file(user, LASTCRAWL_RECORD_FILE_PATH, USER_POST_CSV_FILE_PATH, DOWNLOAD_ALL_POSTS):
 	blank_return_obj = {'last_crawl': datetime(1970, 1, 1, 0, 0, 0), 'newest_post_datetime': datetime(1970, 1, 1, 0, 0, 0), 'newest_post_id': None}
 
-	csv_exists = True
+	user_post_csv_exists = True
 
-	# If there is no existing CSV file containing this user's posts, return csv_exists = False
-	if os.path.isfile(CSV_FILE_PATH) == False:
-		csv_exists = False
-		blank_return_obj['csv_exists'] = False
+	# If there is no existing CSV file containing this user's posts, return user_post_csv_exists = False
+	if os.path.isfile(USER_POST_CSV_FILE_PATH) == False:
+		user_post_csv_exists = False
+		blank_return_obj['user_post_csv_exists'] = False
 	else:
-		blank_return_obj['csv_exists'] = True
+		blank_return_obj['user_post_csv_exists'] = True
 
-	# If archive file does not exist, return an object that contains default/blank values.
-	if os.path.isfile(archive_file_path) == False:
+	# If last crawl csv file does not exist, return an object that contains default/blank values.
+	if os.path.isfile(LASTCRAWL_RECORD_FILE_PATH) == False:
 		return blank_return_obj
 	elif DOWNLOAD_ALL_POSTS == True:
 		return blank_return_obj
 
 	while True:
 		try:
-			logger.debug('Accessing CSV archive file: ' + archive_file_path)
-			archive_file_df = pd.read_csv(archive_file_path, index_col='user')
+			logger.debug('Accessing CSV lastcrawl file: ' + LASTCRAWL_RECORD_FILE_PATH)
+			lastcrawl_df = pd.read_csv(LASTCRAWL_RECORD_FILE_PATH, index_col='user')
 			break
 		except Exception as e:
-			logger.warning('Error accessing CSV archive file... retrying in 3 secs')
+			logger.warning('Error accessing CSV lastcrawl file... retrying in 3 secs')
 			time.sleep(3)
 			continue
 
-	if user not in archive_file_df.index:
+	if user not in lastcrawl_df.index:
 		return blank_return_obj
 
-	print('hi')
 	return {
-		'last_crawl': datetime.strptime(archive_file_df.loc[user, 'last_crawl'], '%Y-%m-%d %H:%M:%S %z'),
-		'newest_post_datetime': datetime.strptime(archive_file_df.loc[user, 'newest_post_datetime'], '%Y-%m-%d %H:%M:%S %z'),
-		'newest_post_id': archive_file_df.loc[user, 'newest_post_id'],
-		'csv_exists': csv_exists,
+		'last_crawl': datetime.strptime(lastcrawl_df.loc[user, 'last_crawl'], '%Y-%m-%d %H:%M:%S %z'),
+		'newest_post_datetime': datetime.strptime(lastcrawl_df.loc[user, 'newest_post_datetime'], '%Y-%m-%d %H:%M:%S %z'),
+		'newest_post_id': lastcrawl_df.loc[user, 'newest_post_id'],
+		'user_post_csv_exists': user_post_csv_exists,
 	}
 
-# Update master archive file to show we scraped a profile just now.
-def update_archive_file(user, archive_file_path, newest_post_datetime = None, newest_post_id = None):
-	logger.info(f'Updating archive file at {archive_file_path}...')
+# Update last crawl record file to show we scraped a profile just now.
+def update_lastcrawl_file(user, LASTCRAWL_RECORD_FILE_PATH, newest_post_datetime = None, newest_post_id = None):
+	logger.info(f'Updating last crawl record file at {LASTCRAWL_RECORD_FILE_PATH}...')
 
-	if os.path.isfile(archive_file_path): # Check if the archive file exists
+	if os.path.isfile(LASTCRAWL_RECORD_FILE_PATH): # Check if the last crawl record file file exists
 
-		# Read archive file
+		# Read last crawl record file
 		while True:
 			try:
-				archive_file_df = pd.read_csv(archive_file_path, index_col=None)
-				archive_file_df['newest_post_id'] = archive_file_df['newest_post_id'].astype(str)
+				lastcrawl_df = pd.read_csv(LASTCRAWL_RECORD_FILE_PATH, index_col=None)
+				lastcrawl_df['newest_post_id'] = lastcrawl_df['newest_post_id'].astype(str)
 				break
 			except Exception as e:
 				logger.warning('Error accessing CSV file... retrying in 3 secs')
 				time.sleep(3)
 				continue
 
-		if user in archive_file_df['user'].values:
+		if user in lastcrawl_df['user'].values:
 			# update last crawl with current time
-			archive_file_df.loc[archive_file_df['user'] == user, ['last_crawl']] = datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %z')
+			lastcrawl_df.loc[lastcrawl_df['user'] == user, ['last_crawl']] = datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %z')
 
 			if newest_post_datetime is not None:
-				archive_file_df.loc[archive_file_df['user'] == user, ['newest_post_datetime']] = newest_post_datetime.strftime('%Y-%m-%d %H:%M:%S %z')
+				lastcrawl_df.loc[lastcrawl_df['user'] == user, ['newest_post_datetime']] = newest_post_datetime.strftime('%Y-%m-%d %H:%M:%S %z')
 
 			if newest_post_id is not None:
-				archive_file_df.loc[archive_file_df['user'] == user, ['newest_post_id']] = newest_post_id
+				lastcrawl_df.loc[lastcrawl_df['user'] == user, ['newest_post_id']] = newest_post_id
 
 		else: 
-			archive_file_df = archive_file_df.append({
+			lastcrawl_df = lastcrawl_df.append({
 				'user': user,
 				'last_crawl': datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S %z'),
 				'newest_post_datetime': newest_post_datetime.strftime('%Y-%m-%d %H:%M:%S %z') if newest_post_datetime else None,
 				'newest_post_id': str(newest_post_id) if newest_post_id is not None else None,
 				}, ignore_index=True)
 
-	else: # Archive file does not exist, create one.
-		archive_file_df = pd.DataFrame(columns=['user','last_crawl', 'newest_post_datetime', 'newest_post_id'])
-		archive_file_df = archive_file_df.append({
+	else: # Last crawl record file does not exist, create one.
+		lastcrawl_df = pd.DataFrame(columns=['user','last_crawl', 'newest_post_datetime', 'newest_post_id'])
+		lastcrawl_df = lastcrawl_df.append({
 			'user': user,
 			'last_crawl': datetime.now().strftime('%Y-%m-%d %H:%M:%S %z'),
 			'newest_post_datetime': newest_post_datetime.strftime('%Y-%m-%d %H:%M:%S %z') if newest_post_datetime else None,
@@ -196,7 +195,7 @@ def update_archive_file(user, archive_file_path, newest_post_datetime = None, ne
 			}, ignore_index=True)
 
 
-	archive_file_df.to_csv(archive_file_path, index=None)
+	lastcrawl_df.to_csv(LASTCRAWL_RECORD_FILE_PATH, index=None)
 
 # Write a csv file
 def write_csv_file(df, csv_file_path):
@@ -221,7 +220,7 @@ def write_json_file(posts, json_file_path):
 		f.write('\n')
 
 # Pull facebook posts
-def pull_facebook_posts(user, DOWNLOAD_ALL_POSTS, save_file_path, post_counter, options_dict, cookies_file=None, start_url=None, archive_file_path=None):
+def pull_facebook_posts(user, DOWNLOAD_ALL_POSTS, save_file_path, post_counter, options_dict, cookies_file=None, start_url=None, lastcrawl_record_file_path=None):
 
 	if options_dict['allow_extra_requests'] == True:
 		logger.warning(f'Allowing extra requests! You will get reactions for each post, BUT you will be temporarily banned by FB much faster!\nSee "extra_info" here: https://github.com/kevinzg/facebook-scraper#optional-parameters')
@@ -263,14 +262,14 @@ def pull_facebook_posts(user, DOWNLOAD_ALL_POSTS, save_file_path, post_counter, 
 
 	temporary_banned_count = 0
 
-	# if no archive_file_path was specified, then use default path (facebook_post_archive.csv)
-	if archive_file_path == None:
-		archive_file_path = 'facebook_post_archive.csv'
+	# if no lastcrawl file was specified, then use default path (facebook_post_lastcrawl_record.csv)
+	if lastcrawl_record_file_path == None:
+		lastcrawl_record_file_path = 'facebook_post_lastcrawl_record.csv'
 
 	# Get date of newest post pulled previously
-	archive_file_record = read_archive_file(user, archive_file_path, csv_file_path, DOWNLOAD_ALL_POSTS)
-	if archive_file_record['csv_exists'] == False:
-		logger.info('CSV file does not exist! Downloading all posts mode enabled!')		
+	lastcrawl_record = read_lastcrawl_file(user, lastcrawl_record_file_path, csv_file_path, DOWNLOAD_ALL_POSTS)
+	if lastcrawl_record['user_post_csv_exists'] == False:
+		logger.info(f'CSV archive file for {user} does not exist! Downloading all posts mode enabled!')		
 		DOWNLOAD_ALL_POSTS = True
 
 	while True:
@@ -310,12 +309,13 @@ def pull_facebook_posts(user, DOWNLOAD_ALL_POSTS, save_file_path, post_counter, 
 					logger.info(f'Post #{post_counter} does not have a date!')
 
 
-				# Check if post is earlier than the newest post pulled in the archive, if yes, stop pulling.
+				# Check if post is earlier than the newest post pulled for this user, 
+				# according to the last crawl record file, If yes, stop pulling.
 				# Only compare posts with unix timestamps to avoid any timezone related comparison issues.
 				if post['timestamp'] is not None:
 					# Look at first 10 posts to avoid any issues with pinned posts
-					if post["timestamp"] < datetime.timestamp(archive_file_record['newest_post_datetime']) and post_counter > 10 and DOWNLOAD_ALL_POSTS == False: 
-						logger.info(f'STOP pulling posts, as Post #{post_counter} ({post["post_id"]}, {post["time"].strftime("%Y-%m-%d %H:%M:%S %z")}) is older than newest_post_datetime ({archive_file_record["newest_post_datetime"].strftime("%Y-%m-%d %H:%M:%S %z")})')
+					if post["timestamp"] < datetime.timestamp(lastcrawl_record['newest_post_datetime']) and post_counter > 10 and DOWNLOAD_ALL_POSTS == False: 
+						logger.info(f'STOP pulling posts, as Post #{post_counter} ({post["post_id"]}, {post["time"].strftime("%Y-%m-%d %H:%M:%S %z")}) is older than newest_post_datetime ({lastcrawl_record["newest_post_datetime"].strftime("%Y-%m-%d %H:%M:%S %z")})')
 						break
 
 				# If never seen before, then add to CSV file and JSON file.
@@ -338,11 +338,11 @@ def pull_facebook_posts(user, DOWNLOAD_ALL_POSTS, save_file_path, post_counter, 
 
 			if len(new_posts) > 0:
 				logger.info(f"{post_counter} posts ({len(new_posts)} new) retrieved in {round(time.time() - start)}s. Latest new post: {newest_post}. Oldest new post: {oldest_post}")
-				update_archive_file(user, archive_file_path, newest_post, str(newest_post_id))
+				update_lastcrawl_file(user, lastcrawl_record_file_path, newest_post, str(newest_post_id))
 
 			else:
 				logger.info(f"{post_counter} posts ({len(new_posts)} new) retrieved in {round(time.time() - start)}s.")
-				update_archive_file(user, archive_file_path)
+				update_lastcrawl_file(user, lastcrawl_record_file_path)
 
 			write_csv_file(df, csv_file_path)
 			write_json_file(new_posts, json_file_path)
@@ -521,8 +521,8 @@ if __name__ == '__main__':
 
 	time.sleep(3)
 
-	ARCHIVE_FILE_PATH = 'facebook_post_archive.csv'
+	LASTCRAWL_RECORD_FILE_PATH = 'facebook_post_lastcrawl_record.csv'
 
 	# Pull FB posts
 	pull_facebook_posts(username, DOWNLOAD_ALL_POSTS, SAVE_FILE_PATH, post_counter, OPTIONS_DICT, 
-		COOKIES_FILE_PATH, start_url=start_url, archive_file_path=ARCHIVE_FILE_PATH)
+		COOKIES_FILE_PATH, start_url=start_url, lastcrawl_record_file_path=LASTCRAWL_RECORD_FILE_PATH)
