@@ -10,7 +10,6 @@ from urllib.request import HTTPError
 
 import pandas as pd
 
-from ig_libraries_link import *
 from facebook_scraper import *
 from progressist import ProgressBar
 
