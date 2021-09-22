@@ -250,14 +250,16 @@ def pull_facebook_posts(user, DOWNLOAD_ALL_POSTS, save_file_path, post_counter, 
 		
 	else:
 
-		df = pd.DataFrame(columns=["post_id", "post_url", "time", "timestamp", "post_text", "likes", "comments", "shares", "fetched_time", "fetched_timestamp", "available", "reaction_count", "reactions", "comments_full","factcheck",\
+		df = pd.DataFrame(columns=["post_id", "post_url", "time", "timestamp", "post_text",\
+			"likes", "comments", "shares", "fetched_time", "fetched_timestamp", "available",\
+			"reaction_count", "reactions", "comments_full","factcheck",\
 			"image","image_id","image_ids","image_lowquality","images",\
 			"images_description","images_lowquality","images_lowquality_description",\
-			"is_live","link","reactors","shared_post_id","shared_post_url","shared_text",\
-			"shared_time","shared_user_id","shared_username","shares","text",\
+			"is_live","link","links","reactors","shared_post_id","shared_post_url","shared_text",\
+			"shared_time","shared_user_id","shared_username","text",\
 			"user_id","user_url","username","video","video_duration_seconds",\
 			"video_height","video_id","video_quality","video_size_MB","video_thumbnail",\
-			"video_watches","video_width","w3_fb_url","listing_location","listing_location","listing_price","listing_title"])
+			"video_watches","video_width","w3_fb_url","listing_location","listing_price","listing_title"])
 
 	temporary_banned_count = 0
 
