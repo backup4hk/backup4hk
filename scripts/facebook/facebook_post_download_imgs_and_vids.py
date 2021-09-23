@@ -1,14 +1,14 @@
 '''
 # Download Facebook post's images and videos
 # This script will download all the images and videos of all posts inside a given JSON file 
-# Last updated: 2021-09-20
+# Last updated: 2021-09-22
 '''
 
-import json, logging, os, urllib.parse, re
+import logging, os, urllib.parse
 from datetime import datetime
 from urllib.request import HTTPError
 
-import pandas as pd
+import pandas as pd, emoji
 
 from facebook_scraper import *
 from progressist import ProgressBar
@@ -53,16 +53,16 @@ def get_input_variables():
 		return return_dict 
 
 def remove_emoji_newline(text, num_characters_to_keep):
-	regrex_pattern = re.compile(pattern = "["
-		u"\U0001F600-\U0001F64F"  # emoticons
-		u"\U0001F300-\U0001F5FF"  # symbols & pictographs
-		u"\U0001F680-\U0001F6FF"  # transport & map symbols
-		u"\U0001F1E0-\U0001F1FF"  # flags (iOS)
-		u"\n" # newline
-							"]+", flags = re.UNICODE)
-	stripped_text = regrex_pattern.sub(r'',text) [0:num_characters_to_keep]
+	# emoji, from https://stackoverflow.com/a/61018246/
+	stripped_text = emoji.get_emoji_regexp().sub("", text) 
+	
+	# newline and other characters
+	stripped_text = stripped_text.replace('\n','') 
 	stripped_text = stripped_text.replace('/','')
 	stripped_text = stripped_text.replace('\\','')
+
+	# only keep set # of characters
+	stripped_text = stripped_text[0:num_characters_to_keep]
 
 	return stripped_text
 
