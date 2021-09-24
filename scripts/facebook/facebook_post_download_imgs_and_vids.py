@@ -133,7 +133,7 @@ def media_download(username, filename_of_json_file):
 
 						img_counter += 1
 						logger.info(f'Downloading post #{post_counter}, image #{img_counter}, image id: {image_id}...')
-
+						logger.debug(image_url)
 						# Get file extension of url, from here: https://stackoverflow.com/a/4776959
 						path = urllib.parse.urlparse(image_url).path
 						ext = os.path.splitext(path)[1]
@@ -153,6 +153,7 @@ def media_download(username, filename_of_json_file):
 
 				img_counter += 1
 				logger.info(f'Downloading post #{post_counter}, image #{img_counter}, image id: {img_id}...')
+				logger.debug(img_lowquality_url)
 
 				# Get file extension of url, from here: https://stackoverflow.com/a/4776959
 				ext = os.path.splitext(path)[1]
