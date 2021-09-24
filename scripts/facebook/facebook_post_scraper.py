@@ -254,7 +254,7 @@ def pull_facebook_posts(user, DOWNLOAD_ALL_POSTS, save_file_path, post_counter, 
 			"reaction_count", "reactions", "comments_full","factcheck",\
 			"image","image_id","image_ids","image_lowquality","images",\
 			"images_description","images_lowquality","images_lowquality_description",\
-			"is_live","link","links","reactors","shared_post_id","shared_post_url","shared_text",\
+			"link","links","reactors","shared_post_id","shared_post_url","shared_text",\
 			"shared_time","shared_user_id","shared_username","text",\
 			"user_id","user_url","source","username","is_live","video","video_duration_seconds",\
 			"video_height","video_id","video_quality","video_size_MB","video_thumbnail",\
