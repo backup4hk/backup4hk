@@ -4,7 +4,7 @@
 # Last updated: 2021-09-22
 '''
 
-import logging, os, urllib.parse
+import logging, os, urllib.parse, urllib.request, socket
 from datetime import datetime
 from urllib.request import HTTPError
 
@@ -61,6 +61,7 @@ def remove_emoji_newline(text, num_characters_to_keep):
 
 
 def media_download(username, filename_of_json_file):
+	# load post JSON file
 	try:
 		with open(filename_of_json_file) as f:
 			json_obj = json.load(f)
@@ -71,6 +72,15 @@ def media_download(username, filename_of_json_file):
 	# Create "media" folder if it does not exist
 	if not os.path.exists(f'posts/{username}/media'):
 		os.makedirs(f'posts/{username}/media')
+
+	# set urllib browser header
+	opener = urllib.request.build_opener()
+	opener.addheaders = [('User-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:92.0) Gecko/20100101 Firefox/92.0')]
+	urllib.request.install_opener(opener)
+
+	# set socket timeout
+	socket_timeout_secs = 60
+	socket.setdefaulttimeout(socket_timeout_secs)
 
 	post_counter = 0
 
@@ -112,9 +122,10 @@ def media_download(username, filename_of_json_file):
 			logger.debug(post['video'])
 			try:
 				urllib.request.urlretrieve(post['video'], f'{folder_name}/{post_id}_{video_id}{ext}', bar.on_urlretrieve)
-
+			except TimeoutError as e:
+				logger.error(f'Cannot download video. Post #{post_counter}, Post ID: {post_id}. Video ID: {video_id}\nError: Timeout error ({socket_timeout_secs} s): {e}')
 			except HTTPError as e:
-				logger.error(f'Cannot download video. Post ID: {post_id}. Video ID: {video_id}\nError code: {e.code}\nError: {e}')
+				logger.error(f'Cannot download video. Post #{post_counter}, Post ID: {post_id}. Video ID: {video_id}\nError code: {e.code}\nError: {e}')
 
 		# If this post contains images, then download them. 
 		# =========================
@@ -138,6 +149,8 @@ def media_download(username, filename_of_json_file):
 
 						try:
 							urllib.request.urlretrieve(image_url, f'{folder_name}/{post_id}_{img_counter:02d}_{image_id}{ext}')
+						except TimeoutError as e:
+							logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, image ID: {image_id}\nError: Timeout error ({socket_timeout_secs} s): {e}')
 						except HTTPError as e:
 							logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, image ID: {image_id}\nError code: {e.code}\nError: {e}')
 
@@ -159,6 +172,8 @@ def media_download(username, filename_of_json_file):
 
 				try:						
 					urllib.request.urlretrieve(img_lowquality_url, f'{folder_name}/{post_id}_{img_counter:02d}_{img_id}{ext}')
+				except TimeoutError as e:
+					logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, Low quality img ID: {img_id}\nError: Timeout error ({socket_timeout_secs} s): {e}')
 				except HTTPError as e:
 					logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, Low quality img ID: {img_id}\nError code: {e.code}\nError: {e}')
 
