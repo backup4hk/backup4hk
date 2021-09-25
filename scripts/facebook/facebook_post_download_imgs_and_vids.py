@@ -59,7 +59,6 @@ def remove_emoji_newline(text, num_characters_to_keep):
 
 	return stripped_text
 
-
 def media_download(username, filename_of_json_file):
 	# load post JSON file
 	try:
@@ -81,6 +80,9 @@ def media_download(username, filename_of_json_file):
 	# set socket timeout
 	socket_timeout_secs = 60
 	socket.setdefaulttimeout(socket_timeout_secs)
+
+	# create error csv dataframe
+	error_df = pd.DataFrame()
 
 	post_counter = 0
 
@@ -123,9 +125,14 @@ def media_download(username, filename_of_json_file):
 			try:
 				urllib.request.urlretrieve(post['video'], f'{folder_name}/{post_id}_{video_id}{ext}', bar.on_urlretrieve)
 			except TimeoutError as e:
-				logger.error(f'Cannot download video. Post #{post_counter}, Post ID: {post_id}. Video ID: {video_id}\nError: Timeout error ({socket_timeout_secs} s): {e}')
+				logger.error(f'Cannot download video. Post #{post_counter}, Post ID: {post_id}. Video ID: {video_id}\nError: Timeout error ({socket_timeout_secs} s): {str(e)}')
+				error_df = error_df.append(post, ignore_index=True)
 			except HTTPError as e:
-				logger.error(f'Cannot download video. Post #{post_counter}, Post ID: {post_id}. Video ID: {video_id}\nError code: {e.code}\nError: {e}')
+				logger.error(f'Cannot download video. Post #{post_counter}, Post ID: {post_id}. Video ID: {video_id}\nError code: {str(e.code)}\nHTTP Error: {str(e)}')
+				error_df = error_df.append(post, ignore_index=True)
+			except Exception as e: 
+				logger.error(f'Cannot download video. Post #{post_counter}, Post ID: {post_id}. Video ID: {video_id}\nError code: {str(e.code)}\nError: {str(e)}')
+				error_df = error_df.append(post, ignore_index=True)
 
 		# If this post contains images, then download them. 
 		# =========================
@@ -150,9 +157,15 @@ def media_download(username, filename_of_json_file):
 						try:
 							urllib.request.urlretrieve(image_url, f'{folder_name}/{post_id}_{img_counter:02d}_{image_id}{ext}')
 						except TimeoutError as e:
-							logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, image ID: {image_id}\nError: Timeout error ({socket_timeout_secs} s): {e}')
+							logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, image ID: {image_id}\nError: Timeout error ({socket_timeout_secs} s): {str(e)}')
+							error_df = error_df.append(post, ignore_index=True)			
 						except HTTPError as e:
-							logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, image ID: {image_id}\nError code: {e.code}\nError: {e}')
+							logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, image ID: {image_id}\nError code: {str(e.code)}\nHTTP Error: {str(e)}')
+							error_df = error_df.append(post, ignore_index=True)			
+						except Exception as e:
+							logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, image ID: {image_id}\nError code: {str(e.code)}\nError: {str(e)}')
+							error_df = error_df.append(post, ignore_index=True)			
+
 
 		# Download low quality images:
 		if len(post['images_lowquality']) >= 1:
@@ -173,16 +186,24 @@ def media_download(username, filename_of_json_file):
 				try:						
 					urllib.request.urlretrieve(img_lowquality_url, f'{folder_name}/{post_id}_{img_counter:02d}_{img_id}{ext}')
 				except TimeoutError as e:
-					logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, Low quality img ID: {img_id}\nError: Timeout error ({socket_timeout_secs} s): {e}')
+					logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, Low quality img ID: {img_id}\nError: Timeout error ({socket_timeout_secs} s): {str(e)}')
+					error_df = error_df.append(post, ignore_index=True)			
 				except HTTPError as e:
-					logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, Low quality img ID: {img_id}\nError code: {e.code}\nError: {e}')
-
+					logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, Low quality img ID: {img_id}\nError code: {str(e.code)}\nHTTP Error: {str(e)}')
+					error_df = error_df.append(post, ignore_index=True)			
+				except Exception as e:
+					logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, Low quality img ID: {img_id}\nError code: {str(e.code)}\nError: {str(e)}')
+					error_df = error_df.append(post, ignore_index=True)			
 
 		if media_exists == False:
 			logger.info(f"No media for post #{post_id}")
 			with open(f'{folder_name}/no_media_for_this_post.txt','w') as f:
 				# create empty file named "no_media_for_this_post.txt" to indicate that this post has no media
 				pass
+
+	# If there are contents in error_df, then write to csv.
+	if error_df.empty is False:
+		error_df.to_csv(f'errors_facebook_post_imgs_and_vids_{username}_{now_as_string}.csv')
 	return
 
 # ============================================
