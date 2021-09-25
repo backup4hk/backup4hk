@@ -128,10 +128,10 @@ def media_download(username, filename_of_json_file):
 				logger.error(f'Cannot download video. Post #{post_counter}, Post ID: {post_id}. Video ID: {video_id}\nError: Timeout error ({socket_timeout_secs} s): {str(e)}')
 				error_df = error_df.append(post, ignore_index=True)
 			except HTTPError as e:
-				logger.error(f'Cannot download video. Post #{post_counter}, Post ID: {post_id}. Video ID: {video_id}\nError code: {str(e.code)}\nHTTP Error: {str(e)}')
+				logger.error(f'Cannot download video. Post #{post_counter}, Post ID: {post_id}. Video ID: {video_id}\nHTTP Error: {str(e)}')
 				error_df = error_df.append(post, ignore_index=True)
 			except Exception as e: 
-				logger.error(f'Cannot download video. Post #{post_counter}, Post ID: {post_id}. Video ID: {video_id}\nError code: {str(e.code)}\nError: {str(e)}')
+				logger.error(f'Cannot download video. Post #{post_counter}, Post ID: {post_id}. Video ID: {video_id}\nError: {str(e)}')
 				error_df = error_df.append(post, ignore_index=True)
 
 		# If this post contains images, then download them. 
@@ -163,7 +163,7 @@ def media_download(username, filename_of_json_file):
 							logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, image ID: {image_id}\nError code: {str(e.code)}\nHTTP Error: {str(e)}')
 							error_df = error_df.append(post, ignore_index=True)			
 						except Exception as e:
-							logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, image ID: {image_id}\nError code: {str(e.code)}\nError: {str(e)}')
+							logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, image ID: {image_id}\nError: {str(e)}')
 							error_df = error_df.append(post, ignore_index=True)			
 
 
@@ -192,7 +192,7 @@ def media_download(username, filename_of_json_file):
 					logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, Low quality img ID: {img_id}\nError code: {str(e.code)}\nHTTP Error: {str(e)}')
 					error_df = error_df.append(post, ignore_index=True)			
 				except Exception as e:
-					logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, Low quality img ID: {img_id}\nError code: {str(e.code)}\nError: {str(e)}')
+					logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, Low quality img ID: {img_id}\nError: {str(e)}')
 					error_df = error_df.append(post, ignore_index=True)			
 
 		if media_exists == False:
