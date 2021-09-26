@@ -2,8 +2,9 @@
 
 1. Download **both** the Python script **AND** the CSV file. Place them in same folder.
 
-2. Install `snscrape` python library by typing `pip3 install snscrape` (or similar).
-    * More details on `snscrape`: https://github.com/JustAnotherArchivist/snscrape
+2. Install `snscrape` and `pandas` python library by typing `pip3 install snscrape` (or similar) and `pip3 install pandas`.
+    * More details on `snscrape` (used for scraping Twitter): https://github.com/JustAnotherArchivist/snscrape
+    * More details on `pandas` (used for creating CSV): https://pypi.org/project/pandas/
 
 
 3. Edit the `twitter_user_record_list.csv` file. 
@@ -21,7 +22,7 @@
         lihkg_forum,
         ```
 
-4. Run script. You MUST have a `-s` argument that indicates where you want to save the Twitter backed up posts and media.
+4. Run script. you MUST have a `-s` argument that indicates where you want to save the Twitter backed up posts and media.
 
     * Example: run `python3 twitter_scraper.py -s "C:/users/hk/desktop/twitter_backup"`
 
