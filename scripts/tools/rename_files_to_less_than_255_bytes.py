@@ -1,6 +1,6 @@
 '''
 Rename files so file names are less than 255 bytes
-Last updated: 2021-09-25
+Last updated: 2021-09-28
 
 Arguments:
 Arg #1. path to folder, with files that you want to rename (ex: C:/users/hk/Desktop/rthk)
@@ -115,12 +115,13 @@ def rename_files(folder_path, DRY_RUN_MODE=True):
     if not os.path.exists('log/rename_files_to_less_than_255_bytes'):
         os.makedirs('log/rename_files_to_less_than_255_bytes')
 
+    directory_without_punctuation = re.sub(r'[^\w\s]', '_', directory, re.UNICODE)
     if DRY_RUN_MODE == False:
-        csv_file_path = 'log/rename_files_to_less_than_255_bytes/rename_files' + directory.replace('filename_prefix','').replace('/','_') + '_' + now_as_string + '_log.csv'
+        csv_file_path = 'log/rename_files_to_less_than_255_bytes/rename_files_' + directory_without_punctuation + '_' + now_as_string + '_log.csv'
     else:
-        csv_file_path = 'log/rename_files_to_less_than_255_bytes/rename_files' + directory.replace('filename_prefix','').replace('/','_') + '_' + now_as_string + '_DRYRUN_log.csv'
+        csv_file_path = 'log/rename_files_to_less_than_255_bytes/rename_files_' + directory_without_punctuation + '_' + now_as_string + '_DRYRUN_log.csv'
 
-    with open(csv_file_path, 'w') as f:
+    with open(csv_file_path, 'w', encoding='utf-8') as f:
         writer = csv.writer(f, delimiter='\t')
         writer.writerow(['old_name','new_name','directory'])
 
