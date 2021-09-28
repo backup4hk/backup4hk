@@ -111,9 +111,9 @@ def get_input_variables():
 
 # Read last crawl record file csv file, which stores the date we last pulled posts for a profile.
 # (Ex: last time we pulled CNN FB page is 2021-01-03 18:33).
-# (if DOWNLOAD_ALL_POSTS is True, return 1970-01-01 datetime, as we want to download all posts)
+# (if DOWNLOAD_ALL_POSTS is True, return 1970-01-15 datetime [not 1970-01-01 as this causes some unknown bugs, as this is too close to unix time epoch], as we want to download all posts)
 def read_lastcrawl_file(user, LASTCRAWL_RECORD_FILE_PATH, USER_POST_CSV_FILE_PATH, DOWNLOAD_ALL_POSTS):
-	blank_return_obj = {'last_crawl': datetime(1970, 1, 1, 0, 0, 0), 'newest_post_datetime': datetime(1970, 1, 1, 0, 0, 0), 'newest_post_id': None}
+	blank_return_obj = {'last_crawl': datetime(1970, 1, 15, 0, 0, 0), 'newest_post_datetime': datetime(1970, 1, 15, 0, 0, 0), 'newest_post_id': None}
 
 	user_post_csv_exists = True
 
@@ -254,9 +254,9 @@ def pull_facebook_posts(user, DOWNLOAD_ALL_POSTS, save_file_path, post_counter, 
 			"reaction_count", "reactions", "comments_full","factcheck",\
 			"image","image_id","image_ids","image_lowquality","images",\
 			"images_description","images_lowquality","images_lowquality_description",\
-			"link","links","reactors","shared_post_id","shared_post_url","shared_text",\
+			"is_live","link","links","reactors","shared_post_id","shared_post_url","shared_text",\
 			"shared_time","shared_user_id","shared_username","text",\
-			"user_id","user_url","source","username","is_live","video","video_duration_seconds",\
+			"user_id","user_url","source","username","video","video_duration_seconds",\
 			"video_height","video_id","video_quality","video_size_MB","video_thumbnail",\
 			"video_watches","video_width","w3_fb_url","listing_location","listing_price","listing_title"])
 
