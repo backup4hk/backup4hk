@@ -1,6 +1,6 @@
 '''
 Rename files so file names are less than 255 bytes
-Last updated: 2021-09-28
+Last updated: 2021-09-29
 
 Arguments:
 Arg #1. path to folder, with files that you want to rename (ex: C:/users/hk/Desktop/rthk)
@@ -81,6 +81,7 @@ def rename_files(folder_path, DRY_RUN_MODE=True):
     renamed_log = {}
 
     # Generator that traverses through all folders and subfolders
+    # from: https://stackoverflow.com/a/10989155/
     for path, subdirs, files in os.walk(folder_path):
         # For every file:
         for old_name in files:
@@ -91,10 +92,14 @@ def rename_files(folder_path, DRY_RUN_MODE=True):
 
                 # logger.debug('\n***********************************************')
                 
-                # Get file extensions, join them together
+                # Get file extensions, starting from the first period in filename
+                # Ex: if a file is 'a.txt', ext will be '.txt'
+                # Ex: if a file is '1.2.3.4.jpg', ext will be '.2.3.4.jpg'
                 ext = ''.join(Path(old_name).suffixes)
-                # Use regex to get old name of file (without extension)
-                old_name_without_ext = re.sub(re.compile(ext + '$'),'', old_name)
+                # Use regex to get old name of file (without extension, where extension is everything starting from the first period in filename)
+                # Ex: if a file is 'a.txt', old name of file without extension is 'a'
+                # Ex: if a file is '1.2.3.4.jpg', old name of file without extension will be '1'
+                old_name_without_ext = re.sub(re.compile(re.escape(ext) + '$'),'', old_name)
 
                 new_name = rename_filename_to_less_than_255(old_name_without_ext, ext)                
                 renamed_log[old_name] = [new_name, path]
