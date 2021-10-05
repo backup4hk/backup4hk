@@ -89,7 +89,7 @@ def timeout(parameters_dict):
 		mins_to_wait_long_wait = randint(mins_to_long_wait_min, mins_to_long_wait_max)
 
 		logger.info(f'LONG waiting {mins_to_wait_long_wait} mins before pull next page...')
-		logger.info(f'This is NOT an error. Please relax and WAIT for {mins_to_long_wait_min} mins. This prevents being blocked by IG. This is set to happen roughly every ~{number_of_pulls_before_long_pull} pulls (may be higher or lower).')
+		logger.info(f'This is NOT an error. Please relax and WAIT for {mins_to_wait_long_wait} mins. This prevents being blocked by IG. This is set to happen roughly every ~{number_of_pulls_before_long_pull} pulls (may be higher or lower).')
 		logger.info(f'Change "number_of_pulls_before_long_pull", "mins_to_long_wait_min", and "mins_to_long_wait_max" variables to adjust the frequency of this.')
 
 		time.sleep(mins_to_wait_long_wait*60)
