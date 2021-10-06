@@ -1,7 +1,7 @@
 '''
 # Download Facebook post's images and videos
 # This script will download all the images and videos of all posts inside a given JSON file 
-# Last updated: 2021-09-22
+# Last updated: 2021-10-04
 '''
 
 import logging, os, urllib.parse, urllib.request, socket
@@ -59,10 +59,136 @@ def remove_emoji_newline(text, num_characters_to_keep):
 
 	return stripped_text
 
-def media_download(username, filename_of_json_file):
-	# load post JSON file
+# If a post contains a video, get its URL
+def get_video_url(post):
+	# Dict key is "image id", Dict Value is "image url"
+	video_url_dict = {}
+
+	if post['video'] is not None and post['video'].startswith('https://'):
+		video_id = post['video_id']
+		video_url_dict[video_id] = post['video']
+		return video_url_dict
+	else:
+		return False
+
+# Get the post's image URLs, if any
+def get_images_urls(post):
+	# Dict key is "image id", Dict Value is "image url"
+	image_urls_dict = {}
+
+	if 'image_ids' in post:
+		if post['image_ids'] is not None:
+			if len(post['image_ids']) >= 1:
+				img_counter = 0
+
+				for image_id in post['image_ids']:
+					image_url = post['images'][img_counter]
+					img_counter += 1
+					image_urls_dict[image_id] = image_url
+
+				return image_urls_dict
+	
+	return False
+
+# Get the post's low quality image URLs, if any
+def get_low_quality_images_urls(post):
+	# Dict key is "image id", Dict Value is "image url"
+	low_quality_img_urls_dict = {}
+
+	if len(post['images_lowquality']) >= 1:
+		for img_lowquality_url in post['images_lowquality']:
+			path = urllib.parse.urlparse(img_lowquality_url).path
+			# Get file extension of url, from here: https://stackoverflow.com/a/4776959
+			ext = os.path.splitext(path)[1]
+
+			img_id = path.rsplit("/", 1)[-1]
+			img_id = img_id.replace(ext,'') # replace extra extension in img_id
+
+			low_quality_img_urls_dict[img_id] = img_lowquality_url
+		return low_quality_img_urls_dict
+	return False
+
+def populate_record_csv(json_obj, record_df):
+	global number_of_videos
+	global number_of_images
+	global number_of_images_low_quality
+
+	# Go through post JSOn object, extract video / image URLs, add to record CSV 
+	for post in json_obj:
+
+		# Add video URLs
+		video_url_dict = get_video_url(post)
+
+		if video_url_dict is not False:
+			[(video_id, video_url)] = video_url_dict.items() # Each video can have only 1 video. Key is the video_id, value is video_url.
+			number_of_videos += 1
+
+			if video_url not in record_df['url'].values:
+				record_df = record_df.append(
+					{'url': video_url, 
+					'id': video_id,
+					'type': 'video',
+					'post_id': post['post_id'], 
+					'post_text': post['text'], 
+					'post_date': post['time'],
+					'status': 'pending'
+					}, ignore_index=True)
+
+		# Add image URLs
+		image_urls_dict = get_images_urls(post)
+
+		if image_urls_dict is not False:
+			number_of_images += len(image_urls_dict)
+
+			for image_id, url in image_urls_dict.items():
+				if url not in record_df['url'].values:
+					record_df = record_df.append(
+						{'url': url, 
+						'id': image_id,
+						'type': 'image',
+						'post_id': post['post_id'], 
+						'post_text': post['text'], 
+						'post_date': post['time'],
+						'status': 'pending'
+						}, ignore_index=True)
+
+		# Add low quality image URLs
+		low_quality_images_dict = get_low_quality_images_urls(post)
+
+		if low_quality_images_dict is not False:
+			number_of_images_low_quality += len(low_quality_images_dict)
+
+			for image_id, url in low_quality_images_dict.items():
+				if url not in record_df['url'].values:
+					record_df = record_df.append(
+						{'url': url, 
+						'id': image_id,
+						'type': 'image_low_quality',
+						'post_id': post['post_id'], 
+						'post_text': post['text'], 
+						'post_date': post['time'],
+						'status': 'pending'
+						}, ignore_index=True)
+	
+	return record_df
+
+
+def media_download(username, JSON_FILE_PATH):
+	global number_of_videos
+	global number_of_images
+	global number_of_images_low_quality
+
+	total_number_of_posts = 0
+	number_of_videos = 0
+	number_of_videos_downloaded = 0
+	number_of_images = 0
+	number_of_images_downloaded = 0
+	number_of_images_low_quality = 0
+	number_of_images_low_quality_downloaded = 0
+
+	# load JSON file containing all posts for this user
 	try:
-		with open(filename_of_json_file) as f:
+		with open(JSON_FILE_PATH) as f:
 			json_obj = json.load(f)
 	except FileNotFoundError as e:
 		logger.critical('JSON file not found! Did you enter the right file path? Exiting script!')
@@ -81,17 +207,34 @@ def media_download(username, filename_of_json_file):
 	socket_timeout_secs = 60
 	socket.setdefaulttimeout(socket_timeout_secs)
 
-	# create error csv dataframe
-	error_df = pd.DataFrame()
-
 	post_counter = 0
+	total_number_of_posts = len(json_obj)
 
+	# Get all photo and video URLs first to create the CSV record file
+	# =================================================================
+	logger.info('Start preprocessing posts...')
+
+	# Create CSV record file
+	CSV_RECORD_FILE_PATH = f'posts/{username}/media/{username}_media_download_record.csv'
+
+	if os.path.isfile(CSV_RECORD_FILE_PATH):
+		record_df = pd.read_csv(CSV_RECORD_FILE_PATH, index_col=False)
+	else:
+		record_df = pd.DataFrame(columns=['url','id','type','post_id','post_text','post_date','status'])
+
+	record_df = populate_record_csv(json_obj, record_df) 
+	record_df.to_csv(CSV_RECORD_FILE_PATH, index=False)
+
+	logger.info('Finish preprocessing posts')
+
+	# Download images and videos
+	# ============================================================
 	for post in json_obj:
 		post_id = post['post_id']
 
 		post_counter += 1
 		media_exists = False
-		logger.info(f'Processing post #{post_counter} - Post ID: {post_id} - Date: {post["time"]}')
+		logger.info(f'Processing post #{post_counter}/{total_number_of_posts} - Post ID: {post_id} - Date: {post["time"]}')
 
 		# Save files in its own folder
 		# ==========================
@@ -101,18 +244,18 @@ def media_download(username, filename_of_json_file):
 
 		post_time_as_text = datetime.strptime(post_time_as_text, "%Y-%m-%d %H:%M:%S%z").strftime('%Y%m%d_%H%M')
 		# We don't want folder name to have emojis or newlines
-		folder_name = f'posts/{username}/media/{post_time_as_text}_{post_id}_{remove_emoji_newline(post["text"],50)}'
+		POST_SAVE_FOLDER_PATH = f'posts/{username}/media/{post_time_as_text}_{post_id}_{remove_emoji_newline(post["text"],50)}'
 
-		if not os.path.exists(folder_name):
-			os.makedirs(folder_name)
+		if not os.path.exists(POST_SAVE_FOLDER_PATH):
+			os.makedirs(POST_SAVE_FOLDER_PATH)
 
 		# If video exists, download video
-		# ==========================
-		if post['video'] is not None and post['video'].startswith('https://'):
+		# ==========================================================
+		video_url = get_video_url(post)
+		if video_url is not False:
 			media_exists = True
 
 			video_id = post['video_id']
-			video_url = post['video']
 
 			# Get file extension of url, from here: https://stackoverflow.com/a/4776959
 			path = urllib.parse.urlparse(video_url).path
@@ -120,121 +263,147 @@ def media_download(username, filename_of_json_file):
 
 			# Download video
 			bar = ProgressBar(template="Download |{animation}| {done:B}/{total:B} {percent} {elapsed} {tta} ")
-			logger.info(f'Downloading post #{post_counter}, video {video_id}...')
-			logger.debug(post['video'])
+			logger.info(f'Downloading post #{post_counter}/{total_number_of_posts}, video {video_id}...')
+			logger.debug(video_url)
+
 			try:
-				urllib.request.urlretrieve(post['video'], f'{folder_name}/{post_id}_{video_id}{ext}', bar.on_urlretrieve)
+				urllib.request.urlretrieve(video_url, f'{POST_SAVE_FOLDER_PATH}/{post_id}_{video_id}{ext}', bar.on_urlretrieve)
+				record_df.loc[record_df['url'] == video_url, 'status'] = 'ok'	
+				number_of_videos_downloaded += 1			
+
 			except TimeoutError as e:
-				logger.error(f'Cannot download video. Post #{post_counter}, Post ID: {post_id}. Video ID: {video_id}\nError: Timeout error ({socket_timeout_secs} s): {str(e)}')
-				error_df = error_df.append(post, ignore_index=True)
+				logger.error(f'Cannot download video. Post #{post_counter}/{total_number_of_posts}, Post ID: {post_id}. Video ID: {video_id}\nError: Timeout error ({socket_timeout_secs} s): {str(e)}')
+				record_df.loc[record_df['url'] == video_url, 'status'] = 'error'				
+
 			except HTTPError as e:
-				logger.error(f'Cannot download video. Post #{post_counter}, Post ID: {post_id}. Video ID: {video_id}\nHTTP Error: {str(e)}')
-				error_df = error_df.append(post, ignore_index=True)
+				logger.error(f'Cannot download video. Post #{post_counter}/{total_number_of_posts}, Post ID: {post_id}. Video ID: {video_id}\nHTTP Error: {str(e)}')
+				record_df.loc[record_df['url'] == video_url, 'status'] = 'error'				
+
 			except Exception as e: 
-				logger.error(f'Cannot download video. Post #{post_counter}, Post ID: {post_id}. Video ID: {video_id}\nError: {str(e)}')
-				error_df = error_df.append(post, ignore_index=True)
+				logger.error(f'Cannot download video. Post #{post_counter}/{total_number_of_posts}, Post ID: {post_id}. Video ID: {video_id}\nError: {str(e)}')
+				record_df.loc[record_df['url'] == video_url, 'status'] = 'error'				
 
 		# If this post contains images, then download them. 
-		# =========================
+		# ===========================================================
 		# Check if "image_ids" json key exists
-		img_counter = 0
+		img_and_low_quality_img_counter = 0
 
-		if 'image_ids' in post:
-			if post['image_ids'] is not None:
-				if len(post['image_ids']) >= 1:
-					media_exists = True
+		image_urls_dict = get_images_urls(post)
+		
+		if image_urls_dict is not False:
+			media_exists = True
 
-					for image_id in post['image_ids']:		
-						image_url = post['images'][img_counter]
+			for image_id, image_url in image_urls_dict.items():
 
-						img_counter += 1
-						logger.info(f'Downloading post #{post_counter}, image #{img_counter}, image id: {image_id}...')
-						logger.debug(image_url)
-						# Get file extension of url, from here: https://stackoverflow.com/a/4776959
-						path = urllib.parse.urlparse(image_url).path
-						ext = os.path.splitext(path)[1]
+				img_and_low_quality_img_counter += 1
 
-						try:
-							urllib.request.urlretrieve(image_url, f'{folder_name}/{post_id}_{img_counter:02d}_{image_id}{ext}')
-						except TimeoutError as e:
-							logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, image ID: {image_id}\nError: Timeout error ({socket_timeout_secs} s): {str(e)}')
-							error_df = error_df.append(post, ignore_index=True)			
-						except HTTPError as e:
-							logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, image ID: {image_id}\nError code: {str(e.code)}\nHTTP Error: {str(e)}')
-							error_df = error_df.append(post, ignore_index=True)			
-						except Exception as e:
-							logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, image ID: {image_id}\nError: {str(e)}')
-							error_df = error_df.append(post, ignore_index=True)			
+				logger.info(f'Downloading post #{post_counter}/{total_number_of_posts}, image #{img_and_low_quality_img_counter}, image id: {image_id}...')
+				logger.debug(image_url)
+
+				# Get file extension of url, from here: https://stackoverflow.com/a/4776959
+				path = urllib.parse.urlparse(image_url).path
+				ext = os.path.splitext(path)[1]
+
+				try:
+					urllib.request.urlretrieve(image_url, f'{POST_SAVE_FOLDER_PATH}/{post_id}_{img_and_low_quality_img_counter:02d}_{image_id}{ext}')
+					record_df.loc[record_df['url'] == image_url, 'status'] = 'ok'	
+					number_of_images_downloaded += 1			
+					
+				except TimeoutError as e:
+					logger.error(f'Cannot download image. Post #{post_counter}/{total_number_of_posts}, post ID: {post_id}, image #{img_and_low_quality_img_counter}, image ID: {image_id}\nError: Timeout error ({socket_timeout_secs} s): {str(e)}')
+					record_df.loc[record_df['url'] == image_url, 'status'] = 'error'				
+
+				except HTTPError as e:
+					logger.error(f'Cannot download image. Post #{post_counter}/{total_number_of_posts}, post ID: {post_id}, image #{img_and_low_quality_img_counter}, image ID: {image_id}\nError code: {str(e.code)}\nHTTP Error: {str(e)}')
+					record_df.loc[record_df['url'] == image_url, 'status'] = 'error'				
+
+				except Exception as e:
+					logger.error(f'Cannot download image. Post #{post_counter}/{total_number_of_posts}, post ID: {post_id}, image #{img_and_low_quality_img_counter}, image ID: {image_id}\nError: {str(e)}')
+					record_df.loc[record_df['url'] == image_url, 'status'] = 'error'				
 
 
 		# Download low quality images:
-		if len(post['images_lowquality']) >= 1:
+		# ======================================================
+		low_quality_images_dict = get_low_quality_images_urls(post)
+
+		if low_quality_images_dict is not False:
 			media_exists = True
 
-			for img_lowquality_url in post['images_lowquality']:
-				path = urllib.parse.urlparse(img_lowquality_url).path
-				img_id = path.rsplit("/", 1)[-1]
+			for img_id, img_lowquality_url in low_quality_images_dict.items():
+				
+				img_and_low_quality_img_counter += 1
 
-				img_counter += 1
-				logger.info(f'Downloading post #{post_counter}, image #{img_counter}, image id: {img_id}...')
+				logger.info(f'Downloading post #{post_counter}/{total_number_of_posts}, image #{img_and_low_quality_img_counter}, image id: {img_id}...')
 				logger.debug(img_lowquality_url)
 
+				path = urllib.parse.urlparse(img_lowquality_url).path
 				# Get file extension of url, from here: https://stackoverflow.com/a/4776959
 				ext = os.path.splitext(path)[1]
-				img_id = img_id.replace(ext,'') # replace extra extension in img_id
 
 				try:						
-					urllib.request.urlretrieve(img_lowquality_url, f'{folder_name}/{post_id}_{img_counter:02d}_{img_id}{ext}')
+					urllib.request.urlretrieve(img_lowquality_url, f'{POST_SAVE_FOLDER_PATH}/{post_id}_{img_and_low_quality_img_counter:02d}_{img_id}{ext}')
+					record_df.loc[record_df['url'] == img_lowquality_url, 'status'] = 'ok'	
+					number_of_images_low_quality_downloaded += 1			
+
 				except TimeoutError as e:
-					logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, Low quality img ID: {img_id}\nError: Timeout error ({socket_timeout_secs} s): {str(e)}')
-					error_df = error_df.append(post, ignore_index=True)			
+					logger.error(f'Cannot download image. Post #{post_counter}/{total_number_of_posts}, post ID: {post_id}, image #{img_and_low_quality_img_counter}, Low quality img ID: {img_id}\nError: Timeout error ({socket_timeout_secs} s): {str(e)}')
+					record_df.loc[record_df['url'] == img_lowquality_url, 'status'] = 'error'				
 				except HTTPError as e:
-					logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, Low quality img ID: {img_id}\nError code: {str(e.code)}\nHTTP Error: {str(e)}')
-					error_df = error_df.append(post, ignore_index=True)			
+					logger.error(f'Cannot download image. Post #{post_counter}/{total_number_of_posts}, post ID: {post_id}, image #{img_and_low_quality_img_counter}, Low quality img ID: {img_id}\nError code: {str(e.code)}\nHTTP Error: {str(e)}')
+					record_df.loc[record_df['url'] == img_lowquality_url, 'status'] = 'error'				
 				except Exception as e:
-					logger.error(f'Cannot download image. Post #{post_counter}, post ID: {post_id}, image #{img_counter}, Low quality img ID: {img_id}\nError: {str(e)}')
-					error_df = error_df.append(post, ignore_index=True)			
+					logger.error(f'Cannot download image. Post #{post_counter}/{total_number_of_posts}, post ID: {post_id}, image #{img_and_low_quality_img_counter}, Low quality img ID: {img_id}\nError: {str(e)}')
+					record_df.loc[record_df['url'] == img_lowquality_url, 'status'] = 'error'				
+
 
 		if media_exists == False:
 			logger.info(f"No media for post #{post_id}")
-			with open(f'{folder_name}/no_media_for_this_post.txt','w') as f:
+			with open(f'{POST_SAVE_FOLDER_PATH}/no_media_for_this_post.txt','w') as f:
 				# create empty file named "no_media_for_this_post.txt" to indicate that this post has no media
 				pass
+		
+		record_df.to_csv(CSV_RECORD_FILE_PATH, index=False)
 
-	# If there are contents in error_df, then write to csv.
-	if error_df.empty is False:
-		error_df.to_csv(f'errors_facebook_post_imgs_and_vids_{username}_{now_as_string}.csv')
-	return
+	return {
+		'number_of_posts': total_number_of_posts,
+		'number_of_videos': number_of_videos,
+		'number_of_videos_downloaded': number_of_videos_downloaded,
+		'number_of_images': number_of_images,
+		'number_of_images_downloaded': number_of_images_downloaded,
+		'number_of_images_low_quality': number_of_images_low_quality,
+		'number_of_images_low_quality_downloaded': number_of_images_low_quality_downloaded
+	}
 
 # ============================================
 # Run script
+if __name__ == '__main__':
 
-# Set logging
-filename = os.path.basename(__file__)
-filename = filename.replace('.py','')
-stream_handler = logging.StreamHandler()
+	# Set logging
+	filename = os.path.basename(__file__)
+	filename = filename.replace('.py','')
+	stream_handler = logging.StreamHandler()
 
-logger = logging.getLogger()
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger.addHandler(stream_handler)
-stream_handler.setFormatter(formatter)
+	logger = logging.getLogger()
+	formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+	logger.addHandler(stream_handler)
+	stream_handler.setFormatter(formatter)
 
-# Set up file logging
-now_as_string = datetime.now().strftime('%Y%m%d_%H%M')
+	# Set up file logging
+	now_as_string = datetime.now().strftime('%Y%m%d_%H%M')
 
-if not os.path.exists(f'logs/{filename}'):
-	os.makedirs(f'logs/{filename}')
-file_handler = logging.FileHandler(f'logs/{filename}/{filename}_log_{now_as_string}.txt')
-file_handler.setLevel(logging.DEBUG)
-logger.addHandler(file_handler)
-file_handler.setFormatter(formatter)
+	if not os.path.exists(f'logs/{filename}'):
+		os.makedirs(f'logs/{filename}')
+	file_handler = logging.FileHandler(f'logs/{filename}/{filename}_log_{now_as_string}.txt')
+	file_handler.setLevel(logging.DEBUG)
+	logger.addHandler(file_handler)
+	file_handler.setFormatter(formatter)
 
 
-input_variables = get_input_variables()
+	input_variables = get_input_variables()
 
-if input_variables['DEBUG_MODE'] == True:
-	logger.setLevel(logging.DEBUG)
-else:
-	logger.setLevel(logging.INFO)
+	if input_variables['DEBUG_MODE'] == True:
+		logger.setLevel(logging.DEBUG)
+	else:
+		logger.setLevel(logging.INFO)
 
-media_download(input_variables['username'], input_variables['json_file_path'])
+	media_download(input_variables['username'], input_variables['json_file_path'])
