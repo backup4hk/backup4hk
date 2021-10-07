@@ -25,12 +25,14 @@ def json_parse(fileobj, decoder=JSONDecoder(), buffersize=2048):
 # =================================
 # Main function
 
-def split_multiple_ig_jsons(path_to_input_json_file):
+def split_multiple_ig_jsons(path_to_input_json_file_with_combined_jsons):
     counter = 0
 
     df = pd.DataFrame()
 
-    with open(path_to_input_json_file, 'r') as infh:
+    logger.info('Start merging JSONs...')
+  
+    with open(path_to_input_json_file_with_combined_jsons, 'r') as infh:
 
         for data in json_parse(infh):
             counter += 1
@@ -39,4 +41,4 @@ def split_multiple_ig_jsons(path_to_input_json_file):
        
         infh.close()
 
-    df.to_json(path_to_input_json_file, orient='records')
+    df.to_json(path_to_input_json_file_with_combined_jsons, orient='records',indent=2)
