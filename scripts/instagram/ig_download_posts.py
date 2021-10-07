@@ -1,12 +1,14 @@
 # Download Instagram posts
-# Last updated: 2021-10-03
+# Last updated: 2021-10-06
 
 # Instruction:
 # 1. Go to "PARAMETERS" section below, follow COOKIES instructions
 # 2. Run script without any arguments. When script is run, it'll ask you for the IG username you want to download, etc.
 
 from datetime import datetime
-import json, urllib.parse, logging, pandas as pd, os, sys, argparse, traceback, re
+import json, urllib.parse, logging, pandas as pd, os, sys, argparse, traceback, re, ast
+from time import strftime
+import progressist
 
 from ig_libraries import *
 from split_multiple_json_in_txt_file import *
@@ -50,7 +52,6 @@ PROXIES = {
 
 QUERY_HASH = '56a7068fea504063273cc2120ffd54f3' #  pulled from internet
 
-
 # Set waiting times
 SECS_TO_WAIT_MIN = 1
 SECS_TO_WAIT_MAX = 5
@@ -66,9 +67,121 @@ WAITING_PARAMETERS = {
 	'mins_to_long_wait_max': MINS_TO_LONG_WAIT_MAX,
 }
 
-# ===================================================
 # Helper functions
-def remove_emoji_newline(text, num_characters_to_keep):
+# ===============================================================
+
+# Write script state to a JSON file, for resuming this script later if needed
+def script_state_record(state, phase, user, POST_CSV_FILE_PATH, SAVE_FOLDER_PATH, now_as_string, details_dict=None):
+
+	if phase == '1-api':
+		if details_dict.keys() != {"end_cursor"}:
+			raise Exception('details_dict keys are incorrect, 1-api!')
+
+	state_dict = {
+		"state": state, # possible values: quit_by_user, error
+		"phase": phase, # possible values: "1-api", "2-download"
+		"user": user, # store IG username
+		"POST_CSV_FILE_PATH": POST_CSV_FILE_PATH, # store CSV FILE PATH for posts
+		"SAVE_FOLDER_PATH": SAVE_FOLDER_PATH,
+		"script_start_time": now_as_string,
+		"script_crash_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+		# optional_dict will contain:
+		# For phase 1 - API: end_cursor
+		# For phase 2 -  <we don't need to store anything, as we already have an ALREADY_DOWNLOADED_POST txt file, and can just resume download based on progress in that txt file)
+		"details": details_dict, 
+	}
+
+	with open(RECORD_STATE_JSON_FILE_PATH, 'w') as f:
+		json.dump(state_dict, f)
+
+	return True
+
+def script_state_delete():
+	if os.path.exists(RECORD_STATE_JSON_FILE_PATH):
+		os.remove(RECORD_STATE_JSON_FILE_PATH)
+
+def script_state_check():
+	if os.path.exists(RECORD_STATE_JSON_FILE_PATH):
+		json_f = open(RECORD_STATE_JSON_FILE_PATH)
+		state_dict = json.load(json_f)
+
+		logger.info('Previous script run failed - found record state json file')
+
+		while True:
+
+			# Print details of previous script run
+			print('')
+			print('Your previous script run failed. Details:')
+			print(f'Username: {state_dict["user"]}')
+			if state_dict['phase'] == '1-api':
+				print(f'Phase: 1/2 - Downloading post text and metadata from API')
+			elif state_dict['phase'] == '2-download':
+				print(f'Phase: 2/2 - Downloading post media files (photo, video)')
+			else:
+				logger.critical('Invalid phase in record state json file! Exiting!')
+				sys.exit()
+			print(f'CSV file of {state_dict["user"]}\'s posts: {state_dict["POST_CSV_FILE_PATH"]}')
+			print(f'Folder to save {state_dict["user"]}\'s posts in: {state_dict["SAVE_FOLDER_PATH"]}')
+			print(f'Script start time: {datetime.strptime(state_dict["script_start_time"], "%Y%m%d_%H%M").strftime("%Y-%m-%d %H:%M")}')
+			print(f'Script crash time: {state_dict["script_crash_time"]}')
+			print('')
+
+			resume_run = input(f"Do you want to resume your last script run? Y for yes, N for No. If you enter N, you will have to repull {state_dict['user']}'s posts again from the beginning!\n").lower()
+
+			if resume_run == 'y':
+				USE_PROXY = input("Use proxy? Y or N. If yes, specify proxy in script before proceeding.\n").lower()
+
+				if USE_PROXY == 'y':
+					USE_PROXY = True
+				elif USE_PROXY == 'n': 
+					USE_PROXY = False
+				else:
+					print('You did not enter Y or N! Try again!')
+					continue
+
+				DEBUG_MODE = input("Use debug mode, to see debugging info? Y or N.\n").lower()
+
+				if DEBUG_MODE == 'y':
+					DEBUG_MODE = True
+				elif DEBUG_MODE == 'n': 
+					DEBUG_MODE = False
+				else:
+					print('You did not enter Y or N! Try again!')
+					continue
+
+				return {
+					"state_json_exist": True,
+					"resume_run": True,
+					"USE_PROXY": USE_PROXY,
+					"DEBUG_MODE": DEBUG_MODE,
+					"username": state_dict["user"],
+					"phase": state_dict["phase"],
+					"POST_CSV_FILE_PATH": state_dict["POST_CSV_FILE_PATH"],
+					"SAVE_FOLDER_PATH": state_dict["SAVE_FOLDER_PATH"],
+					"now_as_string": state_dict['script_start_time'],
+					"details": state_dict['details'],
+				}
+
+			elif resume_run == 'n':
+				print('Not resuming previous script run!')
+				return {
+					"state_json_exist": True,
+					"resume_run": False
+				}			
+			else:
+				print('You did not enter Y or N! Try again!')
+				continue
+
+	return {
+		"state_json_exist": False,
+		"resume_run": False,
+	}
+	
+def create_post_folder_name(text, max_num_characters_to_keep):
+	# If post has no text, it will be a nan dataframe value
+	if pd.isna(text):
+		return ''
+
 	regrex_pattern = re.compile(pattern = "["
 		u"\U0001F600-\U0001F64F"  # emoticons
 		u"\U0001F300-\U0001F5FF"  # symbols & pictographs
@@ -76,9 +189,27 @@ def remove_emoji_newline(text, num_characters_to_keep):
 		u"\U0001F1E0-\U0001F1FF"  # flags (iOS)
 		u"\n" # newline
 							"]+", flags = re.UNICODE)
-	stripped_text = regrex_pattern.sub(r'',text) [0:num_characters_to_keep]
+	stripped_text = regrex_pattern.sub(r'',text) [0:max_num_characters_to_keep]
 	stripped_text = stripped_text.replace('/','')
 	stripped_text = stripped_text.replace('\\','')
+	stripped_text = stripped_text.replace(':','')
+	stripped_text = stripped_text.replace('：','')
+	stripped_text = stripped_text.replace('*','')
+	stripped_text = stripped_text.replace('?','')
+	stripped_text = stripped_text.replace('？','')
+	stripped_text = stripped_text.replace('"','')
+	stripped_text = stripped_text.replace('”','')
+	stripped_text = stripped_text.replace('<','')
+	stripped_text = stripped_text.replace('>','')
+	stripped_text = stripped_text.replace('|','')
+
+	while True:
+		if len(stripped_text) == 0:
+			break
+		if stripped_text[-1] == ' ' or stripped_text[-1] == '.':
+			stripped_text = stripped_text[:-1]
+			continue
+		break
 
 	return stripped_text
 
@@ -124,11 +255,11 @@ def get_input_variables():
 				use_proxy = False
 
 			# Save location
-			SAVE_FILE_PATH = input("Enter save file path. Leave blank to save in this folder. Example: C:/users/hk/Desktop/backup/)\n")
-			if SAVE_FILE_PATH == '':
-				SAVE_FILE_PATH = os.getcwd()
-			if SAVE_FILE_PATH[-1] == '\\' or SAVE_FILE_PATH[-1] == '/':
-				SAVE_FILE_PATH = SAVE_FILE_PATH[0:-1]
+			SAVE_FOLDER_PATH = input("Enter path to the folder you want to save IG posts in. Leave blank to save in this folder. Example: C:/users/hk/Desktop/backup/)\n")
+			if SAVE_FOLDER_PATH == '':
+				SAVE_FOLDER_PATH = os.getcwd()
+			if SAVE_FOLDER_PATH[-1] == '\\' or SAVE_FOLDER_PATH[-1] == '/':
+				SAVE_FOLDER_PATH = SAVE_FOLDER_PATH[0:-1]
 
 			# Debug mode
 			debug_mode = input("Use debug mode, to see debugging info? Y or N.\n")
@@ -149,15 +280,28 @@ def get_input_variables():
 			'end_cursor': end_cursor,
 			'username': username,
 			'use_proxy': use_proxy,
-			'SAVE_FILE_PATH': SAVE_FILE_PATH,
+			'SAVE_FOLDER_PATH': SAVE_FOLDER_PATH,
 			'DEBUG_MODE': debug_mode,
 		}
 		return return_dict # Return the mode (CSV or single profile) and the profile_file_path
 
-def record_in_archive(filename, shortcode):
-	with open(filename, 'a') as f:
-		f.write(f'{shortcode}\n')
+def record_in_already_downloaded_txt_file(TXT_FILE_PATH, shortcode):
+	if os.path.isfile(TXT_FILE_PATH) == False:
+		with open(TXT_FILE_PATH,'w') as f:
+			f.write(f'{shortcode}\n')
 		f.close()
+	else:
+		with open(TXT_FILE_PATH, 'r+') as f:
+			found = False
+
+			for line in f:
+				if shortcode in line:
+					found = True
+			
+			if found == False:
+				f.write(f'{shortcode}\n')
+			
+			f.close()
 	return
 
 def update_run_log(filename, username, now_dt_obj, mode, status):
@@ -378,61 +522,68 @@ def extract_userid_and_first_endcursor(json_obj):
 # mode = 'all' get posts from ALL endcusors following this one, recursively
 def get_post_ids_from_endcursor(end_cursor, query_hash, username, userid, call_counter, igtv=False, mode='single', proxies=None):
 	global df
-	global SAVE_FILE_PATH
+	global SAVE_FOLDER_PATH
+	global POST_CSV_FILE_PATH 
 
-	call_counter += 1
-	logger.info(f'API call #{call_counter}')
-	logger.info(f'End cursor: {end_cursor}')
-
-	# Set API URL
-	url_api = f'https://www.instagram.com/graphql/query/?query_hash={query_hash}&variables='
-	url_api_variables = f'{{"id":"{userid}","first":50,"after":"{end_cursor}"}}'
-	url_api_variables_encoded = urllib.parse.quote_plus(url_api_variables)
-	url_api = url_api + url_api_variables_encoded
-	logger.info(f'URL: {url_api}')
-
-	# Timeout, then Call IG API
-	timeout(WAITING_PARAMETERS)
-	json_obj = call_ig_api(url_api, HEADER_PAYLOAD, 'end_cursor', PROXIES)
-
-	# Write to JSON file 
-	with open(f'{SAVE_FILE_PATH}/{username}/{username}_ig_posts_{now_as_string}.json', 'a') as f:
-		json.dump(json_obj, f)
-
-	# Get next page and end cursors 
 	try:
-		has_next_page = json_obj['data']['user']['edge_owner_to_timeline_media']['page_info']['has_next_page']
-	except TypeError as e:
-		logger.critical('Invalid end_cursor entered!\nend_cursors should be 120 characters long, and end with "==". Most of the time (but not always), they start with something similar to "QVFE".')
-		sys.exit()
+		call_counter += 1
+		logger.info(f'API call #{call_counter}')
+		logger.info(f'End cursor: {end_cursor}')
+		
 
-	end_cursor = json_obj['data']['user']['edge_owner_to_timeline_media']['page_info']['end_cursor']
+		# Set API URL
+		url_api = f'https://www.instagram.com/graphql/query/?query_hash={query_hash}&variables='
+		url_api_variables = f'{{"id":"{userid}","first":50,"after":"{end_cursor}"}}'
+		url_api_variables_encoded = urllib.parse.quote_plus(url_api_variables)
+		url_api = url_api + url_api_variables_encoded
+		logger.info(f'URL: {url_api}')
 
-	json_prefix = json_obj['data']['user']['edge_owner_to_timeline_media']['edges']
+		# Timeout, then Call IG API
+		timeout(WAITING_PARAMETERS)
+		json_obj = call_ig_api(url_api, HEADER_PAYLOAD, 'end_cursor', PROXIES)
 
-	posts = extract_posts_from_json(json_prefix)
-	df = df.append(posts, ignore_index = True)
-	df.to_csv(f'{SAVE_FILE_PATH}/{username}/{username}_ig_posts_{now_as_string}.csv')
+		# Write to JSON file 
+		with open(f'{SAVE_FOLDER_PATH}/{username}/{username}_ig_posts_{now_as_string}.json', 'a') as f:
+			json.dump(json_obj, f)
 
-	last_post_timestamp = datetime.fromtimestamp(posts[0]['taken_at_unix_time']).strftime('%Y-%m-%d %H:%M')
-	first_post_timestamp = datetime.fromtimestamp(posts[-1]['taken_at_unix_time']).strftime('%Y-%m-%d %H:%M')
-	if igtv is True:
-		logger.debug(f'Processed {len(json_prefix)} IGTV posts: {first_post_timestamp} to {last_post_timestamp} ')
-	else:
-		logger.debug(f'Processed {len(json_prefix)} posts: {first_post_timestamp} to {last_post_timestamp} ')
+		# Get next page and end cursors 
+		try:
+			has_next_page = json_obj['data']['user']['edge_owner_to_timeline_media']['page_info']['has_next_page']
+		except TypeError as e:
+			logger.critical('Invalid end_cursor entered!\nend_cursors should be 120 characters long, and end with "==". Most of the time (but not always), they start with something similar to "QVFE".')
+			sys.exit()
 
-	if has_next_page == False or mode == 'single': #or call_counter == 2: # For debugging --> or call_counter == 2:
-		return posts
-	else:
-		new_list_of_posts = get_post_ids_from_endcursor(end_cursor, query_hash, username, userid, call_counter, igtv, 'all')
-		posts  = posts + new_list_of_posts
-		return posts
+		end_cursor = json_obj['data']['user']['edge_owner_to_timeline_media']['page_info']['end_cursor']
+
+		json_prefix = json_obj['data']['user']['edge_owner_to_timeline_media']['edges']
+
+		posts = extract_posts_from_json(json_prefix)
+		df = df.append(posts, ignore_index = True)
+		df.to_csv(POST_CSV_FILE_PATH, index=False)
+
+		last_post_timestamp = datetime.fromtimestamp(posts[0]['taken_at_unix_time']).strftime('%Y-%m-%d %H:%M')
+		first_post_timestamp = datetime.fromtimestamp(posts[-1]['taken_at_unix_time']).strftime('%Y-%m-%d %H:%M')
+		if igtv is True:
+			logger.info(f'Scraped {len(json_prefix)} IGTV posts: {first_post_timestamp} to {last_post_timestamp} ')
+		else:
+			logger.info(f'Scraped {len(json_prefix)} posts: {first_post_timestamp} to {last_post_timestamp} ')
+
+		if has_next_page == False or mode == 'single': #or call_counter == 2: # For debugging --> or call_counter == 2:
+			return posts
+		else:
+			new_list_of_posts = get_post_ids_from_endcursor(end_cursor, query_hash, username, userid, call_counter, igtv, 'all')
+			posts  = posts + new_list_of_posts
+			return posts
+
+	except Exception as e:
+		script_state_record('error', '1-api', username, POST_CSV_FILE_PATH, now_as_string, SAVE_FOLDER_PATH, {'end_cursor': end_cursor, 'api_call_counter': call_counter})
+
 
 # recurisve = continue to keep pulling posts
 def get_posts_on_first_page(username, header, waiting_parameters, recursive=False, proxies=None):
 
 	global df
-	global SAVE_FILE_PATH
+	global SAVE_FOLDER_PATH
 
 	# Set URLs to call
 	url_api = f'https://www.instagram.com/{username}/?__a=1'
@@ -444,10 +595,10 @@ def get_posts_on_first_page(username, header, waiting_parameters, recursive=Fals
 	# Call IG API
 	json_obj = call_ig_api(url_api, header, 'main_page_of_profile', proxies)
 
-	if not os.path.exists(f'{SAVE_FILE_PATH}/{username}'):
-		os.makedirs(f'{SAVE_FILE_PATH}/{username}')
+	if not os.path.exists(f'{SAVE_FOLDER_PATH}/{username}'):
+		os.makedirs(f'{SAVE_FOLDER_PATH}/{username}')
 	
-	with open(f'{SAVE_FILE_PATH}/{username}/{username}_ig_posts_{now_as_string}.json', 'a') as f:
+	with open(f'{SAVE_FOLDER_PATH}/{username}/{username}_ig_posts_{now_as_string}.json', 'a') as f:
 		json.dump(json_obj, f)
 
 	# Get userid and first endcursor
@@ -477,12 +628,12 @@ def get_posts_on_first_page(username, header, waiting_parameters, recursive=Fals
 
 		last_post_timestamp = datetime.fromtimestamp(posts[0]['taken_at_unix_time']).strftime('%Y-%m-%d %H:%M')
 		first_post_timestamp = datetime.fromtimestamp(posts[-1]['taken_at_unix_time']).strftime('%Y-%m-%d %H:%M')
-		logger.debug(f'Processed {len(posts)} posts: {first_post_timestamp} to {last_post_timestamp} ')
+		logger.info(f'Scraped {len(posts)} posts: {first_post_timestamp} to {last_post_timestamp} ')
 		df = df.append(posts, ignore_index = True)
 	else:
 		posts = None
 
-	df.to_csv(f'{SAVE_FILE_PATH}/{username}/{username}_ig_posts_{now_as_string}.csv')
+	df.to_csv(f'{SAVE_FOLDER_PATH}/{username}/{username}_ig_posts_{now_as_string}.csv', index=False)
 
 
 	if recursive == True:
@@ -511,19 +662,20 @@ def get_posts_on_first_page(username, header, waiting_parameters, recursive=Fals
 # Download the actual photos and videos
 def download_media(username, archive_file_path, proxies=None):
 	global df
-	global SAVE_FILE_PATH
+	global SAVE_FOLDER_PATH
+	global POST_CSV_FILE_PATH
 
 	logger.info('Begin downloading posts (function "download_media")')
 
 	if os.path.isfile(archive_file_path):
 		with open(archive_file_path, 'r') as f:
-			already_downloaded_posts = f.readlines()
+			already_downloaded_posts = [line.rstrip() for line in f]
 			f.close()
 	else:
 		already_downloaded_posts = []
 
-	if not os.path.exists(SAVE_FILE_PATH + '/' + username + '/media'):
-		os.makedirs(SAVE_FILE_PATH + '/' + username + '/media')
+	if not os.path.exists(SAVE_FOLDER_PATH + '/' + username + '/media'):
+		os.makedirs(SAVE_FOLDER_PATH + '/' + username + '/media')
 
 	post_counter = 0
 	total_num_of_posts = len(df)
@@ -535,6 +687,7 @@ def download_media(username, archive_file_path, proxies=None):
 		test_proxy_request = requests.get('https://www.ifconfig.me', proxies=proxies)
 		logger.debug(f"Proxy test: Your IP address is seen as: {test_proxy_request.text}")
 
+	df['additional_media_url'] = df['additional_media_url'].astype(str)
 
 	for index, row in df.iterrows():
 		media_counter_this_post = 0
@@ -553,13 +706,18 @@ def download_media(username, archive_file_path, proxies=None):
 			else:
 				urls_to_download.append(row['display_url'])
 
-			if row['additional_media_url'] is not None:
-				urls_to_download = urls_to_download + row['additional_media_url']
-			
-			media_folder_name = datetime.fromtimestamp(row['taken_at_unix_time']).strftime('%Y%m%d_%H%M') + '_' + shortcode + '_' + remove_emoji_newline(row['caption'],50)
+			if row['additional_media_url'] != 'None':
 
-			if not os.path.exists(SAVE_FILE_PATH + '/' + username + '/media/' + media_folder_name):
-				os.makedirs(SAVE_FILE_PATH + '/' + username + '/media/' + media_folder_name)
+				# additional media url is stored as a list, in literal string format, in the CSV (ex: ['https://1.com', 'https://222.com'])
+				# So we need to interpret this string literally and turn it into list
+				additional_media_url_list = ast.literal_eval(row['additional_media_url'])
+				additional_media_url_list = [n.strip() for n in additional_media_url_list]
+				urls_to_download = urls_to_download + additional_media_url_list
+			
+			media_folder_name = datetime.fromtimestamp(row['taken_at_unix_time']).strftime('%Y%m%d_%H%M') + '_' + shortcode + '_' + create_post_folder_name(row['caption'],50)
+
+			if not os.path.exists(SAVE_FOLDER_PATH + '/' + username + '/media/' + media_folder_name):
+				os.makedirs(SAVE_FOLDER_PATH + '/' + username + '/media/' + media_folder_name)
 
 			for url in urls_to_download:
 				media_counter_this_post += 1
@@ -571,31 +729,41 @@ def download_media(username, archive_file_path, proxies=None):
 
 				download_tries = 0
 
+				bar = progressist.ProgressBar(template="Download |{animation}| {done:B}/{total:B} {percent} {elapsed} {tta} ")
+
+
 				while True:
 					try:
 						download_tries += 1
-						urllib.request.urlretrieve(url, SAVE_FILE_PATH + '/' + username + '/media/' + media_folder_name + '/' + shortcode + '_' + str(media_counter_this_post) + ext)
+						urllib.request.urlretrieve(url, SAVE_FOLDER_PATH + '/' + username + '/media/' + media_folder_name + '/' + shortcode + '_' + str(media_counter_this_post) + ext, bar.on_urlretrieve)
 						break
 					except Exception as e:
 						if download_tries < 3:
-							logger.warning(f'Could not download post#{post_counter}/{total_num_of_posts}, media#{media_counter_this_post}/{len(urls_to_download)}: {url}')
-							logger.warning(f'Will retry {3-download_tries} more times. Waiting 3 secs before retrying...')
-							time.sleep(3)
+							logger.warning(f'Could not download post #{post_counter}/{total_num_of_posts}, media#{media_counter_this_post}/{len(urls_to_download)}: {url}')
+							logger.warning(f'Will retry {3-download_tries} more times. Waiting 5 secs before retrying...')
+							time.sleep(5)
 						if download_tries >= 3:
-							logger.error(f'Could not download post#{post_counter}/{total_num_of_posts}, media#{media_counter_this_post}/{len(urls_to_download)}: {url}')
+							logger.error(f'Failed to download post #{post_counter}/{total_num_of_posts}, media #{media_counter_this_post}/{len(urls_to_download)}: {url}')
 							logger.error('Tried 3 times already! Skipping to next media!')
 							break
-
+						
 			# For every folder, write a csv file that contains this post's metadata
-			row.to_csv(SAVE_FILE_PATH + '/' + username + '/media/' + media_folder_name + '/' + shortcode + '_metadata.csv', header=False)
+			if os.path.exists(SAVE_FOLDER_PATH + '/' + username + '/media/' + media_folder_name) == False:
+					os.makedirs(SAVE_FOLDER_PATH + '/' + username + '/media/' + media_folder_name)
 
-			record_in_archive(ARCHIVE_FILENAME, row['shortcode'])
+			row.to_csv(SAVE_FOLDER_PATH + '/' + username + '/media/' + media_folder_name + '/' + shortcode + '_metadata.csv', header=False)
+
+			record_in_already_downloaded_txt_file(ALREADY_DOWNLOADED_POST_TXT_PATH, shortcode)
 		
 		except Exception as e:
-			logger.error(f'Failed to download media for post #{post_counter}/{total_num_of_posts}: {shortcode} - {taken_at_timestamp}')
+			logger.error(f'Failed to download media for post #{post_counter}/{total_num_of_posts}, media #{media_counter_this_post}/{len(urls_to_download)}: {shortcode} - {taken_at_timestamp}')
 			# logger.debug(e)
 			print(traceback.format_exc())
-			
+
+			script_state_record('error', '2-download', username, POST_CSV_FILE_PATH, SAVE_FOLDER_PATH, now_as_string)
+	
+			continue
+
 # ===================================================
 # Main script
 
@@ -618,7 +786,13 @@ stream_handler.setFormatter(formatter)
 # Run script
 if __name__ == '__main__':
 	try:
-		global SAVE_FILE_PATH
+		global SAVE_FOLDER_PATH
+		global RECORD_STATE_JSON_FILE_PATH
+		global POST_CSV_FILE_PATH
+
+		RECORD_STATE_JSON_FILE_PATH = 'ig_download_posts_state.json'
+
+		input_variables = {}
 
 		# Initialize argument parser
 		parser = argparse.ArgumentParser()
@@ -630,8 +804,8 @@ if __name__ == '__main__':
 		parser.add_argument("--debug",
 		                    action="store_true", dest="DEBUG_MODE", default=False,
 		                    help="Print debug messages")
-		parser.add_argument("--savelocation", dest="SAVE_FILE_PATH",
-		                    help="Save location for IG posts", metavar="SAVE_FILE_PATH")
+		parser.add_argument("--savelocation", dest="SAVE_FOLDER_PATH",
+		                    help="Save location for IG posts", metavar="SAVE_FOLDER_PATH")
 		parser.add_argument("--single_end_cursor",
 		                    action="store", dest="single_end_cursor", default=False, metavar='END_CURSOR',
 		                    help="Only download posts in this end_cursor [usually 50 posts]. Use like this: --single_end_cursor [INPUT END_CURSOR HERE]")
@@ -640,33 +814,53 @@ if __name__ == '__main__':
 		                    help="Download posts, starting from this end cursor, to earliest post by this page. Use like this: --beyond_end_cursor [INPUT END_CURSOR HERE]")
 
 		args = parser.parse_args()
-		#print(args)
 
-		if len(sys.argv) > 1:
-			input_variables = {}
-			if args.single_end_cursor is False and args.beyond_end_cursor is False:
-				input_variables['mode'] = 'all_posts_on_profile'
-			elif args.single_end_cursor is True and args.beyond_end_cursor is True:
-				print("Error! You cannot specify both --single_end_cursor and --beyond_end_cursor! Must pick only one!")
-				sys.exit()
-			elif args.single_end_cursor is True and args.beyond_end_cursor is False:
-				input_variables['mode'] = 'single_end_cursor'
-				input_variables['end_cursor'] = args.single_end_cursor
-			else:
-				input_variables['mode'] = 'beyond_end_cursor'
-				input_variables['end_cursor'] = args.beyond_end_cursor
+		# Check if script state json exists, and whether user wants to resume script.
+		resume_script_result = script_state_check()
 
-			username = args.username
-			USE_PROXY = args.USE_PROXY
-			SAVE_FILE_PATH = args.SAVE_FILE_PATH
-			DEBUG_MODE = args.DEBUG_MODE
+		if resume_script_result['state_json_exist'] == True and resume_script_result["resume_run"] == True:
+			RESUME_SCRIPT_RUN = True
+			USE_PROXY = resume_script_result['USE_PROXY']
+			DEBUG_MODE = resume_script_result['DEBUG_MODE']
+			username = resume_script_result["username"]
+			RESUME_PHASE = resume_script_result["phase"]
+			POST_CSV_FILE_PATH = resume_script_result["POST_CSV_FILE_PATH"]
+			SAVE_FOLDER_PATH = resume_script_result["SAVE_FOLDER_PATH"]
+			now_as_string = resume_script_result['now_as_string']
+			RESUME_DETAILS = resume_script_result['details']
 
-		elif len(sys.argv) == 1:
-			input_variables = get_input_variables()
-			DEBUG_MODE = input_variables['DEBUG_MODE']
-			username = input_variables['username']
-			USE_PROXY = input_variables['use_proxy']
-			SAVE_FILE_PATH = input_variables['SAVE_FILE_PATH']
+			input_variables['mode'] = 'resume_script_run'
+
+		# No state json file exists
+		else:
+			RESUME_SCRIPT_RUN = False
+			if len(sys.argv) > 1:
+				if args.single_end_cursor is False and args.beyond_end_cursor is False:
+					input_variables['mode'] = 'all_posts_on_profile'
+				elif args.single_end_cursor is True and args.beyond_end_cursor is True:
+					print("Error! You cannot specify both --single_end_cursor and --beyond_end_cursor! Must pick only one!")
+					sys.exit()
+				elif args.single_end_cursor is True and args.beyond_end_cursor is False:
+					input_variables['mode'] = 'single_end_cursor'
+					input_variables['end_cursor'] = args.single_end_cursor
+				else:
+					input_variables['mode'] = 'beyond_end_cursor'
+					input_variables['end_cursor'] = args.beyond_end_cursor
+
+				username = args.username
+				USE_PROXY = args.USE_PROXY
+				SAVE_FOLDER_PATH = args.SAVE_FOLDER_PATH
+				DEBUG_MODE = args.DEBUG_MODE
+
+			elif len(sys.argv) == 1:
+				input_variables = get_input_variables()
+				DEBUG_MODE = input_variables['DEBUG_MODE']
+				username = input_variables['username']
+				USE_PROXY = input_variables['use_proxy']
+				SAVE_FOLDER_PATH = input_variables['SAVE_FOLDER_PATH']
+
+
+			POST_CSV_FILE_PATH = f'{SAVE_FOLDER_PATH}/{username}/{username}_ig_posts_{now_as_string}.csv'
 
 		if DEBUG_MODE is True:
 			logger.setLevel(logging.DEBUG)
@@ -688,19 +882,21 @@ if __name__ == '__main__':
 		file_handler.setFormatter(formatter)
 
 		# Declare global variables
-		global ARCHIVE_FILENAME
-		ARCHIVE_FILENAME = f'{SAVE_FILE_PATH}/{username}/{username}_ig_archive.txt'
+		global ALREADY_DOWNLOADED_POST_TXT_PATH
+		ALREADY_DOWNLOADED_POST_TXT_PATH = f'{SAVE_FOLDER_PATH}/{username}/{username}_ig_already_downloaded_post.txt'
 
 		# this dataframe will store metadata of all IG posts
 		global df
-		df = pd.DataFrame(columns=['id','display_url','shortcode','is_video','video_url','number_of_medias','additional_media_url','taken_at','taken_at_unix_time','likes',
-				'comments_count','comments_count_more','caption', 'owner_id','owner','video_view_count','video_duration','has_audio','json_post_metadata'])
+		if RESUME_SCRIPT_RUN == True:
+			df = pd.read_csv(POST_CSV_FILE_PATH, index_col=None)
+		else:
+			df = pd.DataFrame(columns=['id','display_url','shortcode','is_video','video_url','number_of_medias','additional_media_url','taken_at','taken_at_unix_time','likes',
+					'comments_count','comments_count_more','caption', 'owner_id','owner','video_view_count','video_duration','has_audio','json_post_metadata'])
 
 		if USE_PROXY == False:
 			PROXIES = None
 
-
-	# Pull posts
+		# Pull posts
 		if input_variables['mode'] == 'all_posts_on_profile':
 			returned_dict = get_posts_on_first_page(username, HEADER_PAYLOAD, WAITING_PARAMETERS, recursive=True, proxies=PROXIES)
 			# igtv_posts = returned_dict['igtv_posts']
@@ -709,13 +905,23 @@ if __name__ == '__main__':
 			update_run_log_by_user(run_log_by_ig_user_file_path, username, now_dt_obj, 'last_successful_pull_all_posts')
 			update_run_log_by_user(run_log_by_ig_user_file_path, username, now_dt_obj, 'last_successful_pull_any_posts')
 
-		elif input_variables['mode'] == 'beyond_end_cursor':
-			end_cursor = input_variables['end_cursor']
-			username = input_variables['username']
+		elif input_variables['mode'] == 'beyond_end_cursor' or (RESUME_SCRIPT_RUN == True and RESUME_PHASE == '1-api'):
+			
+			# If user entered end cursor
+			if input_variables['mode'] == 'beyond_end_cursor':
+				end_cursor = input_variables['end_cursor']
+				username = input_variables['username']
+				api_call_counter = 0
+			# if user is resuming a run
+			elif RESUME_SCRIPT_RUN == True and RESUME_PHASE == '1-api': 
+				end_cursor = RESUME_DETAILS['end_cursor']
+				api_call_counter = RESUME_DETAILS['api_call_counter']
+				# no need to define username, as we already got this from checking resume_script_result 
+
 			userid = get_userid(username, PROXIES)
 
 			logger.info(f'Getting all posts beyond end_cursor {end_cursor}')
-			posts = get_post_ids_from_endcursor(end_cursor, QUERY_HASH, username, userid, 0, mode='all', proxies=PROXIES)
+			posts = get_post_ids_from_endcursor(end_cursor, QUERY_HASH, username, userid, api_call_counter, mode='all', proxies=PROXIES)
 
 			update_run_log_by_user(run_log_by_ig_user_file_path, username, now_dt_obj, 'last_successful_pull_any_posts')
 
@@ -729,9 +935,15 @@ if __name__ == '__main__':
 
 			update_run_log_by_user(run_log_by_ig_user_file_path, username, now_dt_obj, 'last_successful_pull_any_posts')
 
-		download_media(username, ARCHIVE_FILENAME, PROXIES)
+		download_media(username, ALREADY_DOWNLOADED_POST_TXT_PATH, PROXIES)
 		update_run_log(run_log_file_path, username, now_dt_obj, input_variables['mode'], 'success')
-		split_multiple_ig_jsons(f'{SAVE_FILE_PATH}/{username}/{username}_ig_posts_{now_as_string}.json')
+		try:
+			json.loads(f'{SAVE_FOLDER_PATH}/{username}/{username}_ig_posts_{now_as_string}.json')
+		except ValueError as e:
+			split_multiple_ig_jsons(f'{SAVE_FOLDER_PATH}/{username}/{username}_ig_posts_{now_as_string}.json')
+
+		# Check if state JSON file exists, if it does, then delete it, as we successfully ran this script.
+		script_state_delete()
 
 	except Exception as e:
 		logger.critical(f'Error! {e}')
