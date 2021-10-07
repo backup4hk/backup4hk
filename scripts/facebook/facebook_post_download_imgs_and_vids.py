@@ -1,7 +1,7 @@
 '''
 # Download Facebook post's images and videos
 # This script will download all the images and videos of all posts inside a given JSON file 
-# Last updated: 2021-10-04
+# Last updated: 2021-10-06
 '''
 
 import logging, os, urllib.parse, urllib.request, socket
@@ -251,11 +251,12 @@ def media_download(username, JSON_FILE_PATH):
 
 		# If video exists, download video
 		# ==========================================================
-		video_url = get_video_url(post)
-		if video_url is not False:
+		video_url_dict = get_video_url(post)
+		if video_url_dict is not False:
 			media_exists = True
 
-			video_id = post['video_id']
+			video_id = list(video_url_dict.keys())[0]
+			video_url = list(video_url_dict.values())[0]
 
 			# Get file extension of url, from here: https://stackoverflow.com/a/4776959
 			path = urllib.parse.urlparse(video_url).path
