@@ -1,7 +1,7 @@
 '''
 # Scrape Facebook for posts
 # NOTE: This script does NOT download post photos or videos
-# Last updated: 2021-09-22
+# Last updated: 2021-10-11
 '''
 
 import json, time, logging, os, argparse, traceback, requests
@@ -208,16 +208,19 @@ def write_csv_file(df, csv_file_path):
 	df.to_csv(csv_file_path,index=False)
 
 # Write a json file
-def write_json_file(posts, json_file_path):
+def write_json_file(df, json_file_path):
+	
 	# if json file path folder path does not exist, create folder
 	if not os.path.exists(os.path.dirname(json_file_path)):
 		os.makedirs(os.path.dirname(json_file_path))
 
 	logger.info('Writing json')
 
-	with open(json_file_path, 'a') as f:
-		f.write(json.dumps(posts, indent=4, sort_keys=True, default=str))
-		f.write('\n')
+	df['time'] = df['time'].astype(str)
+	df.to_json(json_file_path, orient='records', indent=2)
+	df['time'] = pd.to_datetime(df['time'])
+
+	return True
 
 # Pull facebook posts
 def pull_facebook_posts(user, DOWNLOAD_ALL_POSTS, save_file_path, post_counter, options_dict, cookies_file=None, start_url=None, lastcrawl_record_file_path=None):
@@ -228,7 +231,8 @@ def pull_facebook_posts(user, DOWNLOAD_ALL_POSTS, save_file_path, post_counter, 
 	# Only have one master csv file per user that stores posts, update this file as needed
 	csv_file_path = f'{save_file_path}/posts/{username}/fb_posts_{user}.csv'
 
-	json_file_path = f'{save_file_path}/posts/{username}/fb_posts_{user}_{now_as_string}.json'
+	# json_file_path = f'{save_file_path}/posts/{username}/fb_posts_{user}_{now_as_string}.json'
+	json_file_path = f'{save_file_path}/posts/{username}/fb_posts_{user}.json'
 
 	if os.path.isfile(csv_file_path):
 		logger.debug(f'CSV File exists: {csv_file_path}')
@@ -329,7 +333,13 @@ def pull_facebook_posts(user, DOWNLOAD_ALL_POSTS, save_file_path, post_counter, 
 					df = df.loc[df['post_id'] != post['post_id']]
 					df = df.append(post, ignore_index=True)
 					new_posts.append(post)
-					
+
+				# Every 10 posts, write the posts to CSV
+				if post_counter % 10 == 0:
+					write_csv_file(df, csv_file_path)
+					write_json_file(df, json_file_path)
+
+										
 			logger.info("Done pulling posts")
 
 			newest_post = df['time'].max()
@@ -344,15 +354,16 @@ def pull_facebook_posts(user, DOWNLOAD_ALL_POSTS, save_file_path, post_counter, 
 				logger.info(f"{post_counter} posts ({len(new_posts)} new) retrieved in {round(time.time() - start)}s.")
 				update_lastcrawl_file(user, lastcrawl_record_file_path)
 
+			# Since all posts are now downloaded, write them again to CSV file
 			write_csv_file(df, csv_file_path)
-			write_json_file(new_posts, json_file_path)
+			write_json_file(df, json_file_path)
 
 			return new_posts
 
 		except facebook_scraper.exceptions.TemporarilyBanned as e:
 			temporary_banned_count += 1
 
-			# Intentionally set a random number like "3476", "1177" to appear to not be a bot.
+			# Intentionally set a random number like "3476", "1177" to appear to not be a bot
 			sleep_secs = 3476 + (1177 * (temporary_banned_count - 1))
 			logger.info(f"Temporarily banned, sleeping for {sleep_secs / 60} m ({sleep_secs} secs). Note: you will get temporary banned more often if you use EXTRA REQUESTS!")
 			time.sleep(sleep_secs)
@@ -370,7 +381,7 @@ def pull_facebook_posts(user, DOWNLOAD_ALL_POSTS, save_file_path, post_counter, 
 				logger.error(f"Error! {post_counter} posts ({len(new_posts)} new) retrieved in {round(time.time() - start)}s. Newest post: {newest_post}. Oldest post: {oldest_post}")
 				logger.error('Error: ' + str(e))
 				write_csv_file(df, csv_file_path)
-				write_json_file(new_posts, json_file_path)
+				write_json_file(df, json_file_path)
 
 			return new_posts
 
@@ -483,7 +494,7 @@ if __name__ == '__main__':
 
 	OPTIONS_DICT = {
 		"allow_extra_requests": ALLOW_EXTRA_REQUESTS,
-		"posts_per_page": 10 if ALLOW_EXTRA_REQUESTS == True else 200,
+		"posts_per_page": 10 if ALLOW_EXTRA_REQUESTS == True else 50,
 	}
 
 	proxies = { 'https' : PROXY } 
