@@ -255,6 +255,7 @@ def populate_record_csv(json_obj, record_df):
 						'status': 'pending'
 						}, ignore_index=True)
 	
+	record_df.sort_values(by='post_number',inplace=True, ascending=True)
 	return record_df
 
 
@@ -346,7 +347,7 @@ def media_download(username, JSON_FILE_PATH):
 			video_url = list(video_url_dict.values())[0]
 
 			# If video has not been downloaded, then download it
-			vid_downloaded_already_result = ((record_df['url'] == video_url) & (record_df['type'] == 'video') & (record_df['media_id'] == video_id) & (record_df['post_id'] == int(post_id)))
+			vid_downloaded_already_result = record_df['status'][((record_df['url'] == video_url) & (record_df['type'] == 'video') & (record_df['media_id'] == video_id) & (record_df['post_id'] == int(post_id)))]
 			
 			if vid_downloaded_already_result.values[0] != 'ok':
 				# Get file extension of url, from here: https://stackoverflow.com/a/4776959
@@ -359,6 +360,9 @@ def media_download(username, JSON_FILE_PATH):
 				logger.debug(video_url)
 
 				try:
+					opener = urllib.request.build_opener()
+					opener.addheaders = [('User-agent', 'facebookexternalhit/1.1'),('Referer', 'https://www.facebook.com/')]
+					urllib.request.install_opener(opener)
 					urllib.request.urlretrieve(video_url, f'{POST_SAVE_FOLDER_PATH}/{post_id}_{video_id}{ext}', bar.on_urlretrieve)
 					record_df.loc[record_df['url'] == video_url, 'status'] = 'ok'	
 					number_of_videos_downloaded += 1			
@@ -395,7 +399,7 @@ def media_download(username, JSON_FILE_PATH):
 				img_and_low_quality_img_counter += 1
 
 				# If image has not been downloaded, then download it
-				img_downloaded_already_result = ((record_df['url'] == image_url) & (record_df['type'] == 'image') & (record_df['media_id'] == image_id) & (record_df['post_id'] == int(post['post_id'])))
+				img_downloaded_already_result = record_df['status'][((record_df['url'] == image_url) & (record_df['type'] == 'image') & (record_df['media_id'] == image_id) & (record_df['post_id'] == int(post['post_id'])))]
 
 				if img_downloaded_already_result.values[0] != 'ok':
 
@@ -441,8 +445,8 @@ def media_download(username, JSON_FILE_PATH):
 				img_and_low_quality_img_counter += 1
 
 				# If this img id has not been downloaded, then download.
-				img_lowquality_downloaded_already_result = ((record_df['url'] == img_lowquality_url) & (record_df['type'] == 'image_lowquality') & (record_df['media_id'] == img_id) & (record_df['post_id'] == int(post['post_id'])))
-				
+				img_lowquality_downloaded_already_result = record_df['status'][((record_df['url'] == img_lowquality_url) & (record_df['type'] == 'image_low_quality') & (record_df['media_id'] == img_id) & (record_df['post_id'] == int(post['post_id'])))]
+
 				if img_lowquality_downloaded_already_result.values[0] != 'ok':
 
 					logger.info(f'Downloading post #{post_counter}/{total_number_of_posts}, image #{img_and_low_quality_img_counter}, image id: {img_id}...')
