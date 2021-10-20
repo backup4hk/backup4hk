@@ -1,10 +1,22 @@
 '''
 # Download Facebook post's images and videos
 # This script will download all the images and videos of all posts inside a given JSON file 
-# Last updated: 2021-10-11
+# Last updated: 2021-10-19
+# INSTRUCTION: You MUST extract a Facebook cookie file (in .txt format) first, so that yt-dlp can login to FB and download FB video.
+# 0. Download YT-DLP first: https://github.com/yt-dlp/yt-dlp (you cannot use Youtube-DL, must use YT-DLP)
+# 1. Login to FB on Chrome / Firefox
+# 2. Download this extension:
+# ---> Chrome: https://chrome.google.com/webstore/detail/editthiscookie/fngmhnnpilhplaeedifhccceomclgfbg
+# ---> Firefox (recommended): https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/
+# 3. Export the Facebook.com cookies ONLY in Netscape format, using extension you just downloaded.
+# ---> For Chrome: you need to go into the Settings for the extension, then Options, then Choose the preferred export format for cookies = Netscape
+# 4. Save the cookies in a .txt file
+# 5. Go to the line that says 'cookiefile' (inside dictionary 'ydl_opts'), type in path to the cookie txt file
+# 6. Run script
 '''
 
 import logging, os, urllib.parse, urllib.request, socket, re
+from random import randint
 from datetime import datetime
 from urllib.request import HTTPError
 
@@ -12,6 +24,7 @@ import pandas as pd, emoji
 
 from facebook_scraper import *
 from progressist import ProgressBar
+import yt_dlp
 
 # ============================================
 # Helper functions
@@ -49,6 +62,21 @@ def get_input_variables():
 		}
 		return return_dict 
 
+# Progress hook for Youtube-DL to download FB videos
+def my_hook(d):
+	if d['status'] == 'downloading':
+		if '_total_bytes_str' in d:
+			print (f'Downloading: {d["_percent_str"]} of {d["_total_bytes_str"]} at {d["_speed_str"]} ETA {d["_eta_str"]}', end = '\x1b[1K\r')
+		elif '_total_bytes_estimate_str' in d:
+			print (f'Downloading: {d["_percent_str"]} of ~{d["_total_bytes_estimate_str"]} at {d["_speed_str"]} ETA {d["_eta_str"]}', end ='\x1b[1K\r')
+		else:
+			print (f'Downloading: {d["_percent_str"]} at {d["_speed_str"]} ETA {d["_eta_str"]}', end = '\x1b[1K\r')
+
+
+	if d['status'] == 'finished':
+		filename=d['filename']
+		print(filename) 
+
 # Create the name of folder to store posts in
 def create_post_folder_name(text, max_num_characters_to_keep):
 	# If post has no text, it will be a nan dataframe value
@@ -85,6 +113,33 @@ def create_post_folder_name(text, max_num_characters_to_keep):
 		break
 
 	return stripped_text
+
+# If a post contains a video, get its URL
+#def get_video_url_new(post):
+	video_exists = False
+	# Dict key is "image id", Dict Value is "image url"
+	video_url_dict = {}
+
+
+
+	# if post['video'] is not None and post['video'].startswith('https://'):
+	# 	video_exists = True
+	# 	video_id = post['video_id']
+	# 	video_url_dict[video_id] = post['video']
+
+	# # Per library author, "videos" is returned when a post has multiple videos. It looks to me though that if a post only has one video, only "video" is returned, not "videos". 
+	# if 'videos' in post and 'video_ids' in post:
+	# 	if post['videos'] is not None and post['video_ids'] is not None:
+	# 		video_exists = True
+	# 		for i in range(len(post['videos'])):
+	# 			video_id = post['video_ids'][i]
+	# 			video_url = post['videos'][i]
+	# 			video_url_dict[video_id] = video_url
+
+	# if video_exists == True:
+	# 	return video_url_dict
+	# else:
+	# 	return False
 
 # If a post contains a video, get its URL
 def get_video_url(post):
@@ -181,11 +236,8 @@ def populate_record_csv(json_obj, record_df):
 	global number_of_images
 	global number_of_images_low_quality
 
-	post_number = 0
-
-	# Go through post JSOn object, extract video / image URLs, add to record CSV 
+	# Go through post JSON object, extract video / image URLs, add to record CSV 
 	for post in json_obj:
-		post_number += 1
 
 		# Add video URLs
 		video_url_dict = get_video_url(post)
@@ -196,9 +248,9 @@ def populate_record_csv(json_obj, record_df):
 
 			if video_id not in record_df['media_id'].values:
 				record_df = record_df.append(
-					{'post_number': post_number,
-					'media_id': video_id,
+					{'media_id': video_id,
 					'url': video_url, 
+					'video_url_source': 'facebook_scraper',
 					'type': 'video',
 					'post_id': post['post_id'], 
 					'post_text': post['text'], 
@@ -221,8 +273,7 @@ def populate_record_csv(json_obj, record_df):
 				if check_if_row_exists_result == False:
 
 					record_df = record_df.append(
-						{'post_number': post_number,
-						'media_id': image_id,
+						{'media_id': image_id,
 						'url': url, 
 						'type': 'image',
 						'post_id': post['post_id'], 
@@ -245,8 +296,7 @@ def populate_record_csv(json_obj, record_df):
 				if check_if_row_exists_result == False:
 
 					record_df = record_df.append(
-						{'post_number': post_number,
-						'media_id': image_id,
+						{'media_id': image_id,
 						'url': url, 
 						'type': 'image_low_quality',
 						'post_id': post['post_id'], 
@@ -255,7 +305,7 @@ def populate_record_csv(json_obj, record_df):
 						'status': 'pending'
 						}, ignore_index=True)
 	
-	record_df.sort_values(by='post_number',inplace=True, ascending=True)
+	record_df.sort_values(by='post_date',inplace=True, ascending=False)
 	return record_df
 
 
@@ -271,6 +321,30 @@ def media_download(username, JSON_FILE_PATH):
 	number_of_images_downloaded = 0
 	number_of_images_low_quality = 0
 	number_of_images_low_quality_downloaded = 0
+
+	# Youtube DL
+	ydl_opts = {
+		'throttledratelimit': 1000000,
+		'write_all_thumbnails': True,
+		'writelink': True,
+		'subtitlelangs': ['all'],
+		'subtitlesformat': 'srt',
+		'writedescription': True,
+		'writeinfojson': True,
+		'clean_infojson': True,
+		'format': 'bestvideo+bestaudio',
+		'cookiefile': 'cookies/cookies_facebook.txt', # CHANGE THIS LINE
+		'ignoreerrors': False, # Ignore errors = False means an exception will be thrown if download error occurs (we want it to throw an error)
+
+		# Debugging:
+		'quiet': True,
+		'no_warnings': True, # This suppresses warnings, not errors
+		'outtmpl': {
+			'default': '' # this is set at runtime
+		},
+		# 'progress_hooks': [my_hook]    
+	}
+
 
 	# load JSON file containing all posts for this user
 	try:
@@ -306,7 +380,7 @@ def media_download(username, JSON_FILE_PATH):
 	if os.path.isfile(CSV_RECORD_FILE_PATH):
 		record_df = pd.read_csv(CSV_RECORD_FILE_PATH, index_col=False)
 	else:
-		record_df = pd.DataFrame(columns=['post_number','media_id','url','status','type','post_id','post_text','post_date'])
+		record_df = pd.DataFrame(columns=['media_id','url','video_url_source','status','type','post_id','post_text','post_date'])
 
 	record_df = populate_record_csv(json_obj, record_df) 
 	record_df['post_id'] = record_df['post_id'].astype('int')
@@ -333,6 +407,7 @@ def media_download(username, JSON_FILE_PATH):
 		# We don't want folder name to have emojis or newlines
 		POST_SAVE_FOLDER_PATH = f'posts/{username}/media/{post_time_as_text}_{post_id}_{create_post_folder_name(post["text"],50)}'
 
+
 		if not os.path.exists(POST_SAVE_FOLDER_PATH):
 			os.makedirs(POST_SAVE_FOLDER_PATH)
 
@@ -343,46 +418,43 @@ def media_download(username, JSON_FILE_PATH):
 		if video_url_dict is not False:
 			media_exists = True
 
-			video_id = list(video_url_dict.keys())[0]
-			video_url = list(video_url_dict.values())[0]
+			video_id_from_post_obj = list(video_url_dict.keys())[0]
 
-			# If video has not been downloaded, then download it
-			vid_downloaded_already_result = record_df['status'][((record_df['url'] == video_url) & (record_df['type'] == 'video') & (record_df['media_id'] == video_id) & (record_df['post_id'] == int(post_id)))]
-			
+			vid_downloaded_already_result = record_df['status'][((record_df['type'] == 'video') & (record_df['media_id'] == video_id_from_post_obj) & (record_df['post_id'] == int(post_id)))]
+
 			if vid_downloaded_already_result.values[0] != 'ok':
-				# Get file extension of url, from here: https://stackoverflow.com/a/4776959
-				path = urllib.parse.urlparse(video_url).path
-				ext = os.path.splitext(path)[1]
+				logger.info(f'Downloading post #{post_counter}/{total_number_of_posts} - Post ID: {post_id} - Video ID: {video_id_from_post_obj}...')
 
-				# Download video
-				bar = ProgressBar(template="Download |{animation}| {done:B}/{total:B} {percent} {elapsed} {tta} ")
-				logger.info(f'Downloading post #{post_counter}/{total_number_of_posts}, video {video_id}...')
-				logger.debug(video_url)
+				# Every 10 downloaded videos, have a longer wait interval, to avoid temporary ban by FB
+				if number_of_videos_downloaded != 0:
+					if number_of_videos_downloaded % 10 == 0 and number_of_videos_downloaded != 0:
+						wait_interval = randint(60,90)
+					else:
+						wait_interval = randint(10,40)
+					logger.info(f'Waiting {wait_interval} s before start...')
+					time.sleep(wait_interval)
 
 				try:
-					opener = urllib.request.build_opener()
-					opener.addheaders = [('User-agent', 'facebookexternalhit/1.1'),('Referer', 'https://www.facebook.com/')]
-					urllib.request.install_opener(opener)
-					urllib.request.urlretrieve(video_url, f'{POST_SAVE_FOLDER_PATH}/{post_id}_{video_id}{ext}', bar.on_urlretrieve)
-					record_df.loc[record_df['url'] == video_url, 'status'] = 'ok'	
-					number_of_videos_downloaded += 1			
+					print(post['post_url'])
+					with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+						# %(id)s here refers to Video ID, NOT Post ID
+						ydl_opts['outtmpl']['default'] = POST_SAVE_FOLDER_PATH + '/%(upload_date)s' + post['post_id'] + '_' + '%(id)s'
 
-				except TimeoutError as e:
-					logger.error(f'Cannot download video. Post #{post_counter}/{total_number_of_posts}, Post ID: {post_id}. Video ID: {video_id}\nError: Timeout error ({socket_timeout_secs} s): {str(e)}')
-					record_df.loc[record_df['url'] == video_url, 'status'] = 'error'				
+						meta = ydl.extract_info(post["post_url"], download=True)#False)
+						video_id_from_yt_dlp = meta['id']
 
-				except HTTPError as e:
-					logger.error(f'Cannot download video. Post #{post_counter}/{total_number_of_posts}, Post ID: {post_id}. Video ID: {video_id}\nHTTP Error: {str(e)}')
-					record_df.loc[record_df['url'] == video_url, 'status'] = 'error'				
+						assert(video_id_from_yt_dlp == video_id_from_post_obj)
 
-				except Exception as e: 
+						record_df.loc[record_df['media_id'] == video_id_from_yt_dlp, 'status'] = 'ok'	
+
+						number_of_videos_downloaded += 1			
+
+				except Exception as e:
 					logger.error(f'Cannot download video. Post #{post_counter}/{total_number_of_posts}, Post ID: {post_id}. Video ID: {video_id}\nError: {str(e)}')
-					record_df.loc[record_df['url'] == video_url, 'status'] = 'error'				
+					record_df.loc[record_df['media_id'] == video_id_from_yt_dlp, 'status'] = 'error'
 
-			# Video has been downloaded, skip
 			else:
-				logger.info(f'Already downloaded, skipping: post #{post_counter}/{total_number_of_posts}, video {video_id}')
-				logger.debug(video_url)
+				logger.info(f'Already downloaded, skipping: post #{post_counter}/{total_number_of_posts} - Post ID: {post_id}, video ID #{video_id_from_post_obj}')
 
 		# If this post contains images, then download them. 
 		# ===========================================================
