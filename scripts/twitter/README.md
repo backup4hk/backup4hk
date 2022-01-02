@@ -1,5 +1,11 @@
 # Twitter scraping instructions
 
+## UPDATE 2022-01-03:
+**You MUST run `pip3 install git+https://github.com/JustAnotherArchivist/snscrape.git` BEFORE RUNNING THE SCRIPT!!**
+
+**OTHERWISE ERROR!!**
+
+## Instruction
 1. Download **both** the Python script **AND** the CSV file. Place them in same folder.
 
 2. Install `snscrape` and `pandas` python library by typing `pip3 install snscrape` (or similar) and `pip3 install pandas`.
